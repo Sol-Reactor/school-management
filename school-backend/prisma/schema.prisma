@@ -1,0 +1,182 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  fullName  String
+  role      Role
+  avatar    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  student Student?
+  teacher Teacher?
+  parent  Parent?
+}
+
+model Student {
+  id       String  @id @default(cuid())
+  userId   String  @unique
+  user     User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  classId  String?
+  parentId String?
+
+  parent      Parent?      @relation("ParentToStudents", fields: [parentId], references: [id])
+  class       Class?       @relation(fields: [classId], references: [id])
+  enrollments Enrollment[]
+  attendance  Attendance[]
+  grades      Grade[]
+}
+
+model Parent {
+  id      String   @id @default(cuid())
+  userId  String   @unique
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // A parent can have many students
+  students Student[] @relation("ParentToStudents")
+}
+
+model Teacher {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  classes   Class[]
+  timetable Timetable[]
+  exams     Exam[]
+}
+
+model Class {
+  id        String   @id @default(cuid())
+  name      String
+  level     String
+  teacherId String?
+  teacher   Teacher? @relation(fields: [teacherId], references: [id])
+
+  students    Student[]
+  enrollments Enrollment[]
+  subjects    Subject[]
+  attendance  Attendance[]
+  timetable   Timetable[]
+  exams       Exam[]
+}
+
+model Subject {
+  id   String @id @default(cuid())
+  name String
+  code String @unique
+
+  classId String?
+  class   Class?  @relation(fields: [classId], references: [id])
+
+  grades    Grade[]     @relation("SubjectGrades")
+  timetable Timetable[]
+  exams     Exam[]
+}
+
+model Enrollment {
+  id        String @id @default(cuid())
+  studentId String
+  classId   String
+
+  student Student @relation(fields: [studentId], references: [id])
+  class   Class   @relation(fields: [classId], references: [id])
+
+  createdAt DateTime @default(now())
+}
+
+model Attendance {
+  id        String           @id @default(cuid())
+  studentId String
+  classId   String
+  date      DateTime
+  status    AttendanceStatus
+
+  student Student @relation(fields: [studentId], references: [id])
+  class   Class   @relation(fields: [classId], references: [id])
+}
+
+model Exam {
+  id        String   @id @default(cuid())
+  name      String
+  date      DateTime
+  classId   String
+  subjectId String
+  teacherId String
+
+  class   Class   @relation(fields: [classId], references: [id])
+  subject Subject @relation(fields: [subjectId], references: [id])
+  teacher Teacher @relation(fields: [teacherId], references: [id])
+  grades  Grade[]
+}
+
+model Grade {
+  id        String @id @default(cuid())
+  examId    String
+  studentId String
+  subjectId String
+  marks     Int
+
+  exam    Exam    @relation(fields: [examId], references: [id])
+  student Student @relation(fields: [studentId], references: [id])
+  subject Subject @relation("SubjectGrades", fields: [subjectId], references: [id])
+}
+
+model Timetable {
+  id        String @id @default(cuid())
+  classId   String
+  subjectId String
+  teacherId String
+  day       String
+  startTime String
+  endTime   String
+
+  class   Class   @relation(fields: [classId], references: [id])
+  subject Subject @relation(fields: [subjectId], references: [id])
+  teacher Teacher @relation(fields: [teacherId], references: [id])
+}
+
+enum Role {
+  ADMIN
+  TEACHER
+  STUDENT
+  PARENT
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  EXCUSED
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  message   String
+  type      NotificationType
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  
+  @@index([userId, read])
+}
+
+enum NotificationType {
+  PARENT_ASSIGNED
+  CLASS_ASSIGNED
+  ENROLLMENT
+  GRADE_POSTED
+  ATTENDANCE_MARKED
+  EXAM_SCHEDULED
+  GENERAL
+}
