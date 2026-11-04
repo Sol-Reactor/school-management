@@ -3,7 +3,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://REPLACE_WITH_RENDER_SERVICE.onrender.com/api/:path*"
+      "destination": "https://school-management-hhzr.onrender.com/api/:path*"
     },
     { "source": "/(.*)", "destination": "/index.html" }
   ],

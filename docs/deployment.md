@@ -56,7 +56,7 @@ DATABASE_URL="<render external url>" npx prisma migrate deploy   # applies the n
 
 - **Root directory:** `school-frontend`
 - **Build command:** `npm run build` · **Output:** `dist`
-- Edit the `/api/:path*` destination in `vercel.json` to your Render URL.
+- `vercel.json` rewrites `/api/:path*` to `https://school-management-hhzr.onrender.com` — update it if the Render URL changes.
 - **Remove the old `VITE_API_URL` environment variable.** The app now calls `/api` on its own
   origin. (It reads `VITE_API_BASE`, which you should leave unset.)
 
