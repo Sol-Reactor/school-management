@@ -25,7 +25,7 @@ All other paths rewrite to `index.html`, so deep links like `/dashboard` work on
 Settings (also captured in `render.yaml`):
 
 - **Build command:** `npm install && npm run build` (runs `prisma generate`)
-- **Start command:** `npm run start:prod` (applies migrations via `scripts/migrate-deploy.js`, then starts the server)
+- **Start command:** `npm start` or `npm run start:prod` (both apply migrations via `scripts/migrate-deploy.js`, then start the server)
 - **Health check path:** `/health`
 
 Environment variables:
