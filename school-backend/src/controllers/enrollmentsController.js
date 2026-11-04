@@ -1,6 +1,6 @@
 import prisma from '../lib/prisma.js';
 import { badRequest, conflict, notFound } from '../lib/errors.js';
-import { assertCanManageClass } from '../lib/access.js';
+import { assertCanManageClass, demoProfileFilter } from '../lib/access.js';
 import { createNotification, notifyAdmins, notifySafely } from './notificationController.js';
 
 const enrollmentInclude = {
@@ -15,6 +15,7 @@ export const getEnrollments = async (req, res) => {
     ...(studentId && { studentId }),
     ...(classId && { classId }),
     ...(req.user.role === 'TEACHER' && { class: { teacherId: req.user.teacher.id } }),
+    ...(req.user.isDemo && { student: demoProfileFilter(req.user) }),
   };
 
   const enrollments = await prisma.enrollment.findMany({

@@ -6,7 +6,7 @@ Haya is deployed as two services:
 | --- | --- | --- |
 | Frontend (React + Vite) | Vercel | `school-frontend/` |
 | API (Express + Prisma) | Render | `school-backend/` |
-| Database | Render PostgreSQL (or any Postgres) | — |
+| Database | Neon PostgreSQL (or any Postgres 14+) | — |
 
 ## How requests flow
 
@@ -39,18 +39,18 @@ Environment variables:
 | `TRUST_PROXY` | yes | `2` — Vercel's proxy + Render's proxy, so rate limiting sees the real client IP |
 | `JWT_EXPIRES_IN` | no | default `7d` |
 
-### First deploy after this change: baseline the migrations
+### Migrations and the one-time baseline
 
-Earlier versions created the production schema with `prisma db push`, which doesn't record
-migrations. If `prisma migrate deploy` fails with **P3005 (database schema is not empty)**,
-mark the migrations that already match production as applied, once, from your machine:
+`npm run start:prod` runs [`scripts/migrate-deploy.js`](../school-backend/scripts/migrate-deploy.js)
+before starting the server. The production database (Neon) was originally created with
+`prisma db push`, which leaves tables but no migration history, so a plain
+`prisma migrate deploy` would fail with **P3005**. On that first deploy the script marks the
+migrations whose tables already exist (`init`, `add_notifications`) as applied, then runs
+`migrate deploy` for everything newer. On a fresh database, or one with history, it only runs
+`migrate deploy`. Nothing has to be run by hand.
 
-```bash
-cd school-backend
-DATABASE_URL="<render external url>" npx prisma migrate resolve --applied 20251119060143_init
-DATABASE_URL="<render external url>" npx prisma migrate resolve --applied 20251119122823_add_notifications
-DATABASE_URL="<render external url>" npx prisma migrate deploy   # applies the newer migrations
-```
+Use Neon's **direct** connection string (host without `-pooler`) for `DATABASE_URL`:
+migrations need it.
 
 ## Vercel (frontend)
 

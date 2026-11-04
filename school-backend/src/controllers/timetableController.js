@@ -1,6 +1,6 @@
 import prisma from '../lib/prisma.js';
 import { badRequest, conflict, forbidden, notFound } from '../lib/errors.js';
-import { assertCanManageClass, assertCanViewClass } from '../lib/access.js';
+import { assertCanManageClass, assertCanViewClass, demoClassFilter } from '../lib/access.js';
 import { DAYS } from '../validation/schemas.js';
 
 const entryInclude = {
@@ -16,7 +16,12 @@ const dayOrder = (a, b) =>
 export const getTimetable = async (req, res) => {
   const { classId, teacherId, day } = req.query;
   const timetable = await prisma.timetable.findMany({
-    where: { ...(classId && { classId }), ...(teacherId && { teacherId }), ...(day && { day }) },
+    where: {
+      ...(classId && { classId }),
+      ...(teacherId && { teacherId }),
+      ...(day && { day }),
+      ...(req.user.isDemo && { class: demoClassFilter(req.user) }),
+    },
     include: entryInclude,
   });
   res.json({ timetable: timetable.sort(dayOrder) });

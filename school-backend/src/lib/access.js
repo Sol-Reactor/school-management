@@ -12,6 +12,19 @@ import { forbidden, notFound } from './errors.js';
 
 const isAdmin = (user) => user?.role === 'ADMIN';
 
+/**
+ * Demo sessions are sandboxed to demo data: a demo admin must never see real
+ * users who signed up on the live site. `isFullAdmin` is the unrestricted admin.
+ */
+export const isFullAdmin = (user) => isAdmin(user) && !user.isDemo;
+
+/** Prisma `where` on User: limits demo sessions to demo-owned users. */
+export const demoUserFilter = (user) => (user?.isDemo ? { isDemo: true } : {});
+/** Same, for relations that point at a profile with a `user` (Student/Teacher/Parent). */
+export const demoProfileFilter = (user) => (user?.isDemo ? { user: { isDemo: true } } : {});
+/** Same, for classes (owned via their teacher). */
+export const demoClassFilter = (user) => (user?.isDemo ? { teacher: { user: { isDemo: true } } } : {});
+
 /** Prisma `where` fragment matching students a teacher teaches. */
 const taughtByTeacher = (teacherId) => ({
   OR: [
@@ -27,7 +40,7 @@ const taughtByTeacher = (teacherId) => ({
 export const studentScope = (user) => {
   switch (user.role) {
     case 'ADMIN':
-      return {};
+      return demoProfileFilter(user);
     case 'TEACHER':
       return taughtByTeacher(user.teacher?.id ?? '__none__');
     case 'STUDENT':
@@ -43,7 +56,7 @@ export const studentScope = (user) => {
 export const classScope = (user) => {
   switch (user.role) {
     case 'ADMIN':
-      return {};
+      return demoClassFilter(user);
     case 'TEACHER':
       return { teacherId: user.teacher?.id ?? '__none__' };
     case 'STUDENT':
@@ -67,7 +80,7 @@ export const classScope = (user) => {
 
 export const canViewStudent = async (user, studentId) => {
   if (!studentId) return false;
-  if (isAdmin(user)) return true;
+  if (isFullAdmin(user)) return true;
   if (user.role === 'STUDENT') return user.student?.id === studentId;
   const match = await prisma.student.findFirst({
     where: { id: studentId, ...studentScope(user) },
@@ -78,7 +91,7 @@ export const canViewStudent = async (user, studentId) => {
 
 export const canViewClass = async (user, classId) => {
   if (!classId) return false;
-  if (isAdmin(user)) return true;
+  if (isFullAdmin(user)) return true;
   const match = await prisma.class.findFirst({
     where: { id: classId, ...classScope(user) },
     select: { id: true },
@@ -89,10 +102,27 @@ export const canViewClass = async (user, classId) => {
 /** Teachers manage only classes they teach; admins manage all. */
 export const canManageClass = async (user, classId) => {
   if (!classId) return false;
-  if (isAdmin(user)) return true;
+  if (isFullAdmin(user)) return true;
+  if (isAdmin(user)) return canViewClass(user, classId); // demo admin: demo classes only
   if (user.role !== 'TEACHER' || !user.teacher?.id) return false;
   const match = await prisma.class.findFirst({
     where: { id: classId, teacherId: user.teacher.id },
+    select: { id: true },
+  });
+  return !!match;
+};
+
+/**
+ * Teaches the class in any capacity: class teacher, or a subject teacher with a
+ * timetable slot or exam in it. Grants read access to the roster (e.g. for a
+ * gradebook) but not class management.
+ */
+export const canTeachClass = async (user, classId) => {
+  if (await canManageClass(user, classId)) return true;
+  if (user.role !== 'TEACHER' || !user.teacher?.id) return false;
+  const teacherId = user.teacher.id;
+  const match = await prisma.class.findFirst({
+    where: { id: classId, OR: [{ timetable: { some: { teacherId } } }, { exams: { some: { teacherId } } }] },
     select: { id: true },
   });
   return !!match;
@@ -117,8 +147,15 @@ export const assertCanManageClass = async (user, classId) => {
   }
 };
 
-export const assertSelfOrAdmin = (user, profileKey, profileId) => {
-  if (isAdmin(user)) return;
+export const assertSelfOrAdmin = async (user, profileKey, profileId) => {
+  if (isFullAdmin(user)) return;
+  if (isAdmin(user)) {
+    // Demo admin: only profiles that belong to demo users.
+    const model = { student: prisma.student, teacher: prisma.teacher, parent: prisma.parent }[profileKey];
+    const match = await model.findFirst({ where: { id: profileId, user: { isDemo: true } }, select: { id: true } });
+    if (match) return;
+    throw forbidden();
+  }
   if (user[profileKey]?.id !== profileId) throw forbidden();
 };
 
@@ -129,7 +166,8 @@ export const assertCanManageExam = async (user, examId) => {
     select: { id: true, classId: true, subjectId: true, teacherId: true },
   });
   if (!exam) throw notFound('Exam not found');
-  if (isAdmin(user)) return exam;
+  if (isFullAdmin(user)) return exam;
+  if (isAdmin(user) && (await canViewClass(user, exam.classId))) return exam;
   const teacherId = user.teacher?.id;
   if (user.role === 'TEACHER' && teacherId) {
     if (exam.teacherId === teacherId || (await canManageClass(user, exam.classId))) return exam;

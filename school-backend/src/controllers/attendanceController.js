@@ -1,6 +1,6 @@
 import prisma from '../lib/prisma.js';
 import { badRequest, conflict, forbidden, notFound } from '../lib/errors.js';
-import { assertCanManageClass, assertCanViewStudent, canManageClass, canViewStudent } from '../lib/access.js';
+import { assertCanManageClass, assertCanViewStudent, canManageClass, canViewStudent, demoProfileFilter } from '../lib/access.js';
 
 /** Attendance is per calendar day: normalise to 00:00 UTC. */
 const startOfDay = (d) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
@@ -23,6 +23,7 @@ export const getAttendance = async (req, res) => {
     ...(studentId && { studentId }),
     ...(date && { date: dayRange(date) }),
     ...(req.user.role === 'TEACHER' && { class: { teacherId: req.user.teacher.id } }),
+    ...(req.user.isDemo && { student: demoProfileFilter(req.user) }),
   };
 
   const [attendance, total] = await Promise.all([

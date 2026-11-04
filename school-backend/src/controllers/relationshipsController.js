@@ -7,7 +7,7 @@ const userSummary = { select: { id: true, fullName: true, email: true, createdAt
 // POST /api/relationships/students/:studentId/parents (the student/admin)
 export const linkStudentToParent = async (req, res) => {
   const { studentId } = req.params;
-  assertSelfOrAdmin(req.user, 'student', studentId);
+  await assertSelfOrAdmin(req.user, 'student', studentId);
 
   const parent = await prisma.parent.findFirst({
     where: { user: { email: req.body.parentEmail } },
@@ -67,7 +67,7 @@ export const getStudentParents = async (req, res) => {
 // GET /api/relationships/parents/:parentId/students (the parent/admin)
 export const getParentStudents = async (req, res) => {
   const { parentId } = req.params;
-  assertSelfOrAdmin(req.user, 'parent', parentId);
+  await assertSelfOrAdmin(req.user, 'parent', parentId);
 
   const parent = await prisma.parent.findUnique({
     where: { id: parentId },

@@ -4,6 +4,7 @@ import {
   assertCanManageClass,
   assertCanViewClass,
   canManageClass,
+  canTeachClass,
   classScope,
 } from '../lib/access.js';
 import { createNotification, notifyAdmins, notifySafely } from './notificationController.js';
@@ -150,10 +151,10 @@ export const deleteClass = async (req, res) => {
   res.json({ message: 'Class deleted' });
 };
 
-// GET /api/classes/:id/students (class teacher/admin)
+// GET /api/classes/:id/students (anyone teaching the class, or admin)
 export const getClassStudents = async (req, res) => {
   const { id } = req.params;
-  await assertCanManageClass(req.user, id);
+  if (!(await canTeachClass(req.user, id))) throw forbidden('Only teachers of this class or an admin can view its roster');
 
   const students = await prisma.student.findMany({
     where: { OR: [{ classId: id }, { enrollments: { some: { classId: id } } }] },

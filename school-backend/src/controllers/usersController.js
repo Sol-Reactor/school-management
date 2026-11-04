@@ -1,6 +1,7 @@
 import prisma from '../lib/prisma.js';
 import { badRequest, conflict, notFound } from '../lib/errors.js';
 import { createUserWithProfile } from './authController.js';
+import { demoUserFilter } from '../lib/access.js';
 import { createNotification, notifySafely } from './notificationController.js';
 
 const listSelect = {
@@ -20,6 +21,7 @@ const listSelect = {
 export const getUsers = async (req, res) => {
   const { role, search, page, limit } = req.query;
   const where = {
+    ...demoUserFilter(req.user),
     ...(role && { role }),
     ...(search && {
       OR: [
@@ -45,8 +47,8 @@ export const getUsers = async (req, res) => {
 
 // GET /api/users/:id (admin)
 export const getUserById = async (req, res) => {
-  const user = await prisma.user.findUnique({
-    where: { id: req.params.id },
+  const user = await prisma.user.findFirst({
+    where: { id: req.params.id, ...demoUserFilter(req.user) },
     select: {
       ...listSelect,
       student: { include: { class: { select: { id: true, name: true, level: true } } } },

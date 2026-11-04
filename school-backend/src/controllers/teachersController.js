@@ -1,11 +1,12 @@
 import prisma from '../lib/prisma.js';
 import { notFound } from '../lib/errors.js';
-import { assertSelfOrAdmin } from '../lib/access.js';
+import { assertSelfOrAdmin, demoProfileFilter } from '../lib/access.js';
 import { DAYS } from '../validation/schemas.js';
 
 // GET /api/teachers (admin)
 export const getTeachers = async (req, res) => {
   const teachers = await prisma.teacher.findMany({
+    where: demoProfileFilter(req.user),
     include: {
       user: { select: { id: true, fullName: true, email: true } },
       classes: { select: { id: true, name: true, level: true } },
@@ -19,7 +20,7 @@ export const getTeachers = async (req, res) => {
 // GET /api/teachers/:id (self/admin)
 export const getTeacherById = async (req, res) => {
   const { id } = req.params;
-  assertSelfOrAdmin(req.user, 'teacher', id);
+  await assertSelfOrAdmin(req.user, 'teacher', id);
 
   const teacher = await prisma.teacher.findUnique({
     where: { id },
@@ -52,7 +53,7 @@ export const getTeacherById = async (req, res) => {
 // GET /api/teachers/:id/classes (self/admin)
 export const getTeacherClasses = async (req, res) => {
   const { id } = req.params;
-  assertSelfOrAdmin(req.user, 'teacher', id);
+  await assertSelfOrAdmin(req.user, 'teacher', id);
 
   const classes = await prisma.class.findMany({
     where: { teacherId: id },
@@ -68,7 +69,7 @@ export const getTeacherClasses = async (req, res) => {
 // GET /api/teachers/:id/students (self/admin)
 export const getTeacherStudents = async (req, res) => {
   const { id } = req.params;
-  assertSelfOrAdmin(req.user, 'teacher', id);
+  await assertSelfOrAdmin(req.user, 'teacher', id);
 
   const students = await prisma.student.findMany({
     where: { OR: [{ class: { teacherId: id } }, { enrollments: { some: { class: { teacherId: id } } } }] },

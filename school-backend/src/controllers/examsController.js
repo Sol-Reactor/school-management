@@ -17,7 +17,7 @@ const examInclude = {
 
 /** Exams visible to the user: by class membership, plus exams a teacher set themselves. */
 const examScope = (user) => {
-  if (user.role === 'ADMIN') return {};
+  if (user.role === 'ADMIN') return user.isDemo ? { class: classScope(user) } : {};
   if (user.role === 'TEACHER') {
     return { OR: [{ teacherId: user.teacher.id }, { class: { teacherId: user.teacher.id } }] };
   }

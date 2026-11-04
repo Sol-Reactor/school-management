@@ -7,8 +7,8 @@ import {
   register,
   updateProfile,
 } from '../controllers/authController.js';
-import { authenticate } from '../middleware/auth.js';
-import { authLimiter, loginLimiter, registerLimiter } from '../middleware/security.js';
+import { authenticate, optionalAuthenticate } from '../middleware/auth.js';
+import { authLimiter, demoLimiter, loginLimiter, registerLimiter } from '../middleware/security.js';
 import { validate } from '../middleware/validate.js';
 import {
   demoLoginSchema,
@@ -19,13 +19,17 @@ import {
 
 const router = express.Router();
 
-router.use(authLimiter);
-
-router.post('/register', registerLimiter, validate({ body: registerSchema }), register);
-router.post('/login', validate({ body: loginSchema }), loginLimiter, login);
-router.post('/demo', validate({ body: demoLoginSchema }), demoLogin);
+// Credential and account-creation endpoints are rate limited. The session check
+// (GET /profile) is not: it runs on every page load and is already authenticated,
+// so limiting it would only lock out real users who share an IP (school networks).
+router.post('/register', authLimiter, registerLimiter, validate({ body: registerSchema }), register);
+router.post('/login', authLimiter, validate({ body: loginSchema }), loginLimiter, login);
+router.post('/demo', demoLimiter, validate({ body: demoLoginSchema }), demoLogin);
 router.post('/logout', logout);
 router.get('/profile', authenticate, getProfile);
-router.put('/profile', authenticate, validate({ body: updateProfileSchema }), updateProfile);
+// Session check for app start-up: 200 with { user: null } for visitors, so a
+// signed-out landing page doesn't log a 401 in the console.
+router.get('/session', optionalAuthenticate, (req, res, next) => (req.user ? getProfile(req, res, next) : res.json({ user: null })));
+router.put('/profile', authLimiter, authenticate, validate({ body: updateProfileSchema }), updateProfile);
 
 export default router;

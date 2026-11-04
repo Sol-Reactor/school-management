@@ -1,6 +1,6 @@
 import prisma from '../lib/prisma.js';
 import { notFound } from '../lib/errors.js';
-import { assertSelfOrAdmin } from '../lib/access.js';
+import { assertSelfOrAdmin, demoProfileFilter } from '../lib/access.js';
 
 const childInclude = (take) => ({
   user: { select: { id: true, fullName: true, email: true } },
@@ -30,6 +30,7 @@ const childInclude = (take) => ({
 // GET /api/parents (admin)
 export const getParents = async (req, res) => {
   const parents = await prisma.parent.findMany({
+    where: demoProfileFilter(req.user),
     include: {
       user: { select: { id: true, fullName: true, email: true } },
       _count: { select: { students: true } },
@@ -42,7 +43,7 @@ export const getParents = async (req, res) => {
 // GET /api/parents/:id (self/admin)
 export const getParentById = async (req, res) => {
   const { id } = req.params;
-  assertSelfOrAdmin(req.user, 'parent', id);
+  await assertSelfOrAdmin(req.user, 'parent', id);
 
   const parent = await prisma.parent.findUnique({
     where: { id },
@@ -58,7 +59,7 @@ export const getParentById = async (req, res) => {
 // GET /api/parents/:id/children (self/admin)
 export const getParentChildren = async (req, res) => {
   const { id } = req.params;
-  assertSelfOrAdmin(req.user, 'parent', id);
+  await assertSelfOrAdmin(req.user, 'parent', id);
 
   const children = await prisma.student.findMany({
     where: { parentId: id },

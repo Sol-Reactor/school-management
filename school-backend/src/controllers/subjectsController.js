@@ -1,6 +1,6 @@
 import prisma from '../lib/prisma.js';
 import { conflict, notFound } from '../lib/errors.js';
-import { assertCanManageClass } from '../lib/access.js';
+import { assertCanManageClass, demoClassFilter } from '../lib/access.js';
 
 const classSummary = { select: { id: true, name: true, level: true } };
 
@@ -8,7 +8,10 @@ const classSummary = { select: { id: true, name: true, level: true } };
 export const getSubjects = async (req, res) => {
   const { classId } = req.query;
   const subjects = await prisma.subject.findMany({
-    where: typeof classId === 'string' && classId ? { classId } : {},
+    where: {
+      ...(typeof classId === 'string' && classId && { classId }),
+      ...(req.user.isDemo && { class: demoClassFilter(req.user) }),
+    },
     include: {
       class: classSummary,
       _count: { select: { timetable: true, exams: true, grades: true } },
@@ -20,7 +23,7 @@ export const getSubjects = async (req, res) => {
 
 // GET /api/subjects/:id — student grades are only included for admins.
 export const getSubjectById = async (req, res) => {
-  const isAdmin = req.user.role === 'ADMIN';
+  const isAdmin = req.user.role === 'ADMIN' && !req.user.isDemo;
   const subject = await prisma.subject.findUnique({
     where: { id: req.params.id },
     include: {

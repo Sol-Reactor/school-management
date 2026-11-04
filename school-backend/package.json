@@ -6,11 +6,12 @@
   "scripts": {
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
-    "start:prod": "prisma migrate deploy && node src/server.js",
+    "start:prod": "node scripts/migrate-deploy.js && node src/server.js",
     "build": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
-    "reset-admin-password": "node resetAdminPassword.js"
+    "reset-admin-password": "node resetAdminPassword.js",
+    "db:seed": "node prisma/seed.js"
   },
   "keywords": [],
   "author": "",
@@ -40,5 +41,8 @@
     "@prisma/client@6.19.0": true,
     "@prisma/engines@6.19.0": true,
     "prisma@6.19.0": true
+  },
+  "prisma": {
+    "seed": "node prisma/seed.js"
   }
 }

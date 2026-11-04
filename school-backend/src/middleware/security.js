@@ -60,7 +60,18 @@ export const registerLimiter = rateLimit({
   skip,
 });
 
-// General ceiling for every other auth endpoint (demo login, logout, profile).
+// Demo sign-ins: generous enough for someone hopping between all four roles,
+// tight enough that a script can't hammer the database.
+export const demoLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 120,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  handler: json429('Too many demo sign-ins from this network. Please wait a few minutes.'),
+  skip,
+});
+
+// General ceiling for credential endpoints (login, register, profile updates).
 export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 100,

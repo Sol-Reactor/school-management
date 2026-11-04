@@ -47,8 +47,8 @@ const readToken = (req) => {
   return null;
 };
 
-/** Requires a valid session; attaches `req.user` with profile ids. */
-export const authenticate = async (req, res, next) => {
+/** Hydrated session user for this request, or throws 401. Clears a bad cookie. */
+export const resolveSessionUser = async (req, res) => {
   const token = readToken(req);
   if (!token) throw unauthorized('Please sign in to continue');
 
@@ -79,6 +79,13 @@ export const authenticate = async (req, res, next) => {
     throw unauthorized('Account no longer exists');
   }
 
+  return user;
+};
+
+/** Requires a valid session; attaches `req.user` with profile ids. */
+export const authenticate = async (req, res, next) => {
+  const user = await resolveSessionUser(req, res);
+
   // Demo accounts are read-only. Routes can opt out (e.g. AI, which returns
   // canned responses for demo users) by setting req.allowDemoWrite first.
   if (user.isDemo && !SAFE_METHODS.has(req.method) && !req.allowDemoWrite) {
@@ -86,6 +93,16 @@ export const authenticate = async (req, res, next) => {
   }
 
   req.user = user;
+  next();
+};
+
+/** Attaches `req.user` when a valid session exists; never rejects the request. */
+export const optionalAuthenticate = async (req, res, next) => {
+  try {
+    req.user = await resolveSessionUser(req, res);
+  } catch (err) {
+    if (err.status !== 401) throw err;
+  }
   next();
 };
 

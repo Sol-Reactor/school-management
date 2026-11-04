@@ -1,6 +1,6 @@
 import prisma from '../lib/prisma.js';
 import { badRequest, conflict, forbidden, notFound } from '../lib/errors.js';
-import { assertCanManageExam, assertCanViewStudent, canViewStudent } from '../lib/access.js';
+import { assertCanManageExam, assertCanViewStudent, canViewStudent, demoProfileFilter } from '../lib/access.js';
 
 const round2 = (n) => Math.round(n * 100) / 100;
 
@@ -17,6 +17,7 @@ export const getGrades = async (req, res) => {
     ...(studentId && { studentId }),
     ...(subjectId && { subjectId }),
     ...teacherExamScope(req.user),
+    ...(req.user.isDemo && { student: demoProfileFilter(req.user) }),
   };
 
   const [grades, total] = await Promise.all([
