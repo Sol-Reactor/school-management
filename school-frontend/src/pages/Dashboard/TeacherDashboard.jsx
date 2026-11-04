@@ -10,6 +10,7 @@ import AttendanceTrendChart from '../../components/charts/AttendanceTrendChart';
 import { percent } from '../../lib/format';
 import { TodaysLessons, UpcomingExams } from './widgets';
 import { firstName, greeting, trendDescription } from './helpers';
+import AtRiskCard from '../../components/insights/AtRiskCard';
 
 const TeacherDashboard = ({ data, user }) => {
   const { summary } = data;
@@ -55,6 +56,10 @@ const TeacherDashboard = ({ data, user }) => {
           />
         </div>
         <TodaysLessons lessons={data.todaysLessons} />
+      </div>
+
+      <div className="mt-6">
+        <AtRiskCard />
       </div>
 
       <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">

@@ -25,6 +25,7 @@ import gradesRoutes from './routes/grades.js';
 import timetableRoutes from './routes/timetable.js';
 import relationshipsRoutes from './routes/relationships.js';
 import notificationRoutes from './routes/notifications.js';
+import insightsRoutes from './routes/insights.js';
 
 export const createApp = () => {
   const app = express();
@@ -67,6 +68,7 @@ export const createApp = () => {
   app.use('/api/timetable', timetableRoutes);
   app.use('/api/relationships', relationshipsRoutes);
   app.use('/api/notifications', notificationRoutes);
+  app.use('/api/insights', insightsRoutes);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

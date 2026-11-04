@@ -9,6 +9,7 @@ import RankedBars from '../../components/charts/RankedBars';
 import { percent } from '../../lib/format';
 import { RecentGrades, TodaysLessons, UpcomingExams } from './widgets';
 import { firstName, greeting, trendDescription } from './helpers';
+import ProgressSummaryCard from '../../components/insights/ProgressSummaryCard';
 
 const StudentDashboard = ({ data, user }) => {
   const { summary, studentInfo } = data;
@@ -57,6 +58,8 @@ const StudentDashboard = ({ data, user }) => {
         </div>
         <TodaysLessons lessons={data.todaysLessons} showTeacher />
       </div>
+
+      <ProgressSummaryCard studentId={studentInfo.id} firstName={firstName(user.fullName)} />
 
       <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
         <RankedBars

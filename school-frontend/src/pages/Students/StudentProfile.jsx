@@ -18,6 +18,7 @@ import { STATUS_META } from '../../lib/attendanceStatus';
 import RankedBars from '../../components/charts/RankedBars';
 import { formatDate, formatWeekday, gradeBand, percent } from '../../lib/format';
 import { attendanceRate, average, subjectAverages, weeklyAttendance } from '../../lib/stats';
+import ProgressSummaryCard from '../../components/insights/ProgressSummaryCard';
 
 const ProfileSkeleton = () => (
   <div role="status" aria-live="polite">
@@ -37,7 +38,7 @@ const ProfileSkeleton = () => (
   </div>
 );
 
-const StudentProfile = ({ insights }) => {
+const StudentProfile = () => {
   const { id } = useParams();
   const student = useApi(() => studentsApi.get(id), [id]);
   const attendance = useApi(() => attendanceApi.forStudent(id), [id]);
@@ -113,8 +114,7 @@ const StudentProfile = ({ insights }) => {
         <StatCard label="Average grade" value={percent(average(grades.map((g) => g.marks)), 1)} icon={LuChartColumn} hint={`${grades.length} graded assessments`} />
       </section>
 
-      {/* Phase 3: Haya Insights (AI progress summary) mounts here. */}
-      {insights}
+      <ProgressSummaryCard studentId={id} firstName={s.user.fullName.split(' ')[0]} />
 
       <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2">

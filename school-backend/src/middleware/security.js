@@ -80,3 +80,16 @@ export const authLimiter = rateLimit({
   handler: json429('Too many requests. Please slow down.'),
   skip,
 });
+
+// AI generation, per signed-in user (runs after authenticate). Demo users only get
+// canned text, so they have a looser ceiling.
+export const aiLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: (req) => (req.user?.isDemo ? 60 : 20),
+  keyGenerator: (req) => (req.user ? `user:${req.user.id}` : ipKeyGenerator(req.ip)),
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  handler: (req, res) =>
+    res.status(429).json({ code: 'AI_RATE_LIMITED', message: 'You have generated a lot of insights this hour. Please try again later.' }),
+  skip,
+});

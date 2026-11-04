@@ -9,6 +9,7 @@ import AttendanceTrendChart from '../../components/charts/AttendanceTrendChart';
 import { percent } from '../../lib/format';
 import { RecentGrades, UpcomingExams } from './widgets';
 import { firstName, greeting } from './helpers';
+import ChildInsights from './ChildInsights';
 
 const ChildCard = ({ child }) => {
   const d = child.attendanceDelta;
@@ -86,6 +87,8 @@ const ParentDashboard = ({ data, user }) => {
           series={data.children.map((c) => ({ key: c.id, name: firstName(c.user.fullName), data: c.attendanceTrend }))}
         />
       </div>
+
+      <ChildInsights students={data.children} />
 
       <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
         <RecentGrades grades={data.recentGrades.slice(0, 6)} showStudent />

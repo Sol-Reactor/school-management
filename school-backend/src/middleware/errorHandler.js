@@ -5,7 +5,7 @@
 // and never need try/catch or an asyncHandler wrapper.
 //
 // Every error response has the same shape:
-//   { message: string, errors?: [{ path: string, message: string }] }
+//   { message: string, code?: string, errors?: [{ path: string, message: string }] }
 import { ZodError } from 'zod';
 import { Prisma } from '@prisma/client';
 import { AppError } from '../lib/errors.js';
@@ -27,6 +27,7 @@ export const errorHandler = (err, req, res, next) => {
   if (err instanceof AppError) {
     return res.status(err.status).json({
       message: err.message,
+      ...(err.code && { code: err.code }),
       ...(err.errors && { errors: err.errors }),
     });
   }

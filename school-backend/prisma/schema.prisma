@@ -36,6 +36,7 @@ model Student {
   enrollments Enrollment[]
   attendance  Attendance[]
   grades      Grade[]
+  aiInsights  AiInsight[]
 }
 
 model Parent {
@@ -181,4 +182,26 @@ enum NotificationType {
   ATTENDANCE_MARKED
   EXAM_SCHEDULED
   GENERAL
+}
+
+// Haya Insights: AI-written text, cached per student and per input fingerprint.
+model AiInsight {
+  id          String        @id @default(cuid())
+  studentId   String
+  student     Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  kind        AiInsightKind
+  content     String
+  // sha256 of prompt version + model + the data the text was written from.
+  inputHash   String
+  model       String
+  canned      Boolean       @default(false)
+  createdById String?
+  createdAt   DateTime      @default(now())
+
+  @@index([studentId, kind, createdAt])
+}
+
+enum AiInsightKind {
+  PROGRESS_SUMMARY
+  RISK_EXPLANATION
 }

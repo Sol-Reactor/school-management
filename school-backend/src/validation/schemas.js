@@ -221,3 +221,8 @@ export const listNotificationsQuery = z.object({
     .optional()
     .transform((v) => v === 'true'),
 });
+
+// ---------- insights ----------
+export const generateInsightSchema = z.object({
+  regenerate: z.boolean().optional().default(false),
+});

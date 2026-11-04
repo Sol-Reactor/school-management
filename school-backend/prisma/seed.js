@@ -136,12 +136,8 @@ async function removeExistingDemo() {
   const teacherIds = users.map((u) => u.teacher?.id).filter(Boolean);
   const classIds = (await prisma.class.findMany({ where: { teacherId: { in: teacherIds } }, select: { id: true } })).map((c) => c.id);
 
-  const optional = [];
-  // Present from Phase 3 onwards; tolerate older schemas.
-  if (prisma.aiSummary) optional.push(prisma.aiSummary.deleteMany({ where: { studentId: { in: studentIds } } }));
-
   await prisma.$transaction([
-    ...optional,
+    prisma.aiInsight.deleteMany({ where: { studentId: { in: studentIds } } }),
     prisma.attendance.deleteMany({ where: { OR: [{ studentId: { in: studentIds } }, { classId: { in: classIds } }] } }),
     prisma.grade.deleteMany({ where: { OR: [{ studentId: { in: studentIds } }, { exam: { teacherId: { in: teacherIds } } }] } }),
     prisma.enrollment.deleteMany({ where: { OR: [{ studentId: { in: studentIds } }, { classId: { in: classIds } }] } }),

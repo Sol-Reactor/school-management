@@ -10,6 +10,7 @@ import RankedBars from '../../components/charts/RankedBars';
 import { percent } from '../../lib/format';
 import { ActivityFeed, UpcomingExams } from './widgets';
 import { firstName, greeting, trendDescription } from './helpers';
+import AtRiskCard from '../../components/insights/AtRiskCard';
 
 const rateTone = (r) => (r == null ? 'neutral' : r >= 95 ? 'success' : r >= 90 ? 'primary' : 'warning');
 
@@ -53,6 +54,10 @@ const AdminDashboard = ({ data, user }) => {
           />
         </div>
         <ActivityFeed items={data.activity} />
+      </div>
+
+      <div className="mt-6">
+        <AtRiskCard />
       </div>
 
       <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
