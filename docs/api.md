@@ -11,7 +11,8 @@ Every error response has the same shape:
 { "message": "Validation failed", "errors": [{ "path": "email", "message": "Enter a valid email address" }] }
 ```
 
-`errors` appears only on validation failures (400).
+`errors` appears only on validation failures (400). AI errors also carry a stable `code`
+(`AI_NOT_CONFIGURED`, `INSUFFICIENT_DATA`, `AI_BUSY`, `AI_UNAVAILABLE`, `AI_REFUSED`, `AI_RATE_LIMITED`).
 
 | Status | Meaning |
 | --- | --- |
@@ -20,6 +21,8 @@ Every error response has the same shape:
 | 403 | signed in but not allowed, including writes from demo accounts |
 | 404 | record or route not found |
 | 409 | duplicate, or the record is still referenced |
+| 422 | not enough data for an AI summary, or the model declined |
+| 503 | AI insights not configured on this server |
 | 429 | rate limited |
 
 List endpoints take `page` (default 1) and `limit` (default 10, max 100). They return
@@ -37,6 +40,7 @@ List endpoints take `page` (default 1) and `limit` (default 10, max 100). They r
 | POST | `/login` | public | sets the session cookie |
 | POST | `/demo` | public | `{ role }`: signs in to the read-only demo account for that role |
 | POST | `/logout` | any | clears the cookie |
+| GET | `/session` | public | `{ user }` when signed in, `{ user: null }` for visitors (never 401) |
 | GET | `/profile` | signed in | |
 | PUT | `/profile` | signed in | `fullName`, `avatar` |
 
@@ -109,6 +113,20 @@ are rejected with 409.
 
 ### Notifications: `/api/notifications` (own notifications only)
 `GET /?unreadOnly=true` · `PUT /read-all` · `PUT /:id/read` · `DELETE /:id`
+
+### Haya Insights: `/api/insights`
+Access to a student follows the same rules as their records: parents their own children,
+teachers students in their classes, students themselves, admins everyone.
+
+| Method | Path | Who | Notes |
+| --- | --- | --- | --- |
+| GET | `/students/:id/summary` | scoped | latest stored summary: `{ insight, aiAvailable, demo }`; `insight.stale` is true when grades or attendance changed since |
+| POST | `/students/:id/summary` | scoped | `{ regenerate? }`. Returns `{ cached: true, insight }` as JSON when a matching summary exists; otherwise streams `text/event-stream`: `meta`, `delta { text }`…, then `done { insight }` or `error { code, message }` |
+| GET | `/at-risk` | teacher, admin | rule-based flags for the caller's students: `{ rules, students: [{ studentId, fullName, className, flags: [{ code, label, detail }], severity, explanation }] }` |
+| POST | `/at-risk/:studentId/explain` | teacher, admin | `{ regenerate? }` → `{ explanation }`; 409 if the student isn't flagged |
+
+Both POST routes are rate limited per user (20 an hour; 60 for demo accounts, which get
+sample text and never call the AI).
 
 ### Health
 `GET /health` and `GET /api/health` → `{ status, database }`

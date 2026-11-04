@@ -25,19 +25,32 @@ All other paths rewrite to `index.html`, so deep links like `/dashboard` work on
 Settings (also captured in `render.yaml`):
 
 - **Build command:** `npm install && npm run build` (runs `prisma generate`)
-- **Start command:** `npm run start:prod` (runs `prisma migrate deploy`, then starts the server)
+- **Start command:** `npm run start:prod` (applies migrations via `scripts/migrate-deploy.js`, then starts the server)
 - **Health check path:** `/health`
 
 Environment variables:
 
 | Variable | Required | Example / notes |
 | --- | --- | --- |
-| `DATABASE_URL` | yes | Render's internal Postgres URL |
+| `DATABASE_URL` | yes | Neon connection string (direct, not `-pooler`) |
 | `JWT_SECRET` | yes | 32+ random chars — `openssl rand -hex 32`. Server refuses to start without it. |
 | `NODE_ENV` | yes | `production` (enables `Secure` cookies) |
 | `FRONTEND_URL` | yes | `https://manageschool-fawn.vercel.app` (comma-separate several) |
 | `TRUST_PROXY` | yes | `2` — Vercel's proxy + Render's proxy, so rate limiting sees the real client IP |
+| `ANTHROPIC_API_KEY` | for AI | Enables Haya Insights for real accounts (demo accounts never use it) |
+| `ANTHROPIC_MODEL` | no | default `claude-opus-5-5` |
+| `DEMO_PASSWORD` | no | password for the seeded demo accounts (default `HayaDemo#2026`) |
 | `JWT_EXPIRES_IN` | no | default `7d` |
+
+### Demo data
+
+The one-click demo needs the demo school. After the first successful deploy, seed it once
+from your machine (it only creates or replaces `@demo.haya.app` data and is safe to re-run):
+
+```bash
+cd school-backend
+DATABASE_URL="<neon url>" npm run db:seed
+```
 
 ### Migrations and the one-time baseline
 

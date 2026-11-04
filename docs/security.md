@@ -49,7 +49,9 @@ List endpoints apply these rules as Prisma `where` scopes. Detail endpoints call
 - **Login:** 10 failed attempts per 15 minutes per IP and email (successful logins don't
   count).
 - **Registration:** 10 per hour per IP.
-- **All other `/api/auth` routes:** 100 per 15 minutes.
+- **Credential routes** (register, login, profile updates): 100 per 15 minutes overall.
+- **Demo sign-ins:** 120 per 15 minutes per IP.
+- **AI generation:** 20 per hour per user (60 for demo accounts, which never call the API).
 - Login does a dummy bcrypt comparison for unknown emails, so response time doesn't reveal
   which accounts exist.
 - Request bodies are limited to 100 kB, and every create/update route is validated with zod.
@@ -58,6 +60,21 @@ List endpoints apply these rules as Prisma `where` scopes. Detail endpoints call
 
 Seeded demo users have `isDemo = true`. The `authenticate` middleware rejects any
 non-GET request from a demo user with `403`, so the public demo can't be vandalised.
+Demo sessions are also sandboxed: the demo admin, teacher, student and parent only ever
+see the seeded demo school, never real accounts. The AI routes opt out of the write block
+(`allowDemoWrite`) but return sample text built from the same numbers, are never stored,
+and never call the Anthropic API.
+
+## AI (Haya Insights)
+
+- Claude is called from the backend only (`@anthropic-ai/sdk`). `ANTHROPIC_API_KEY` never
+  reaches the browser.
+- The model receives a minimal snapshot: first name, class level, attendance figures,
+  subject averages and recent results. Never emails, ids, parent details or other students.
+  Prompt templates live in `school-backend/src/ai/prompts/`.
+- At-risk flags are computed with SQL rules; the model only explains flags that already
+  fired, and is told not to speculate about causes, health or family.
+- Every AI text is labelled "AI-generated · review before sharing" in the UI.
 
 ## Logging
 
