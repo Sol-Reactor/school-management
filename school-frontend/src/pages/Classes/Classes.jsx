@@ -1,522 +1,324 @@
-// src/pages/Classes/Classes.js
-import React, { useState } from "react";
-import { useAuth } from "../../context/AuthContext";
-import { useToast } from "../../context/ToastContext";
-import { useApi } from "../../hooks/useApi";
-import { classService } from "../../services/classService";
-import { enrollmentService } from "../../services/enrollmentService";
-import { getErrorMessage } from "../../services/api";
-import Button from "../../components/UI/Button";
-import LoadingSpinner from "../../components/UI/LoadingSpinner";
-import Modal from "../../components/UI/Modal";
-import {
-  FaSchool,
-  FaSearch,
-  FaPlus,
-  FaChalkboardTeacher,
-  FaUsers,
-  FaEye,
-  FaEdit,
-  FaTrash,
-} from "react-icons/fa";
+import { useId, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { LuPencil, LuPlus, LuSchool, LuSearch, LuSearchX, LuTrash2, LuUserPlus, LuUsers } from 'react-icons/lu';
+import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../context/ToastContext';
+import { useApi } from '../../hooks/useApi';
+import { useForm, validators } from '../../hooks/useForm';
+import { classesApi, enrollmentsApi } from '../../services/schoolService';
+import { getErrorMessage } from '../../services/api';
+import PageHeader from '../../components/ui/PageHeader';
+import Button from '../../components/ui/Button';
+import Badge from '../../components/ui/Badge';
+import Avatar from '../../components/ui/Avatar';
+import Modal from '../../components/ui/Modal';
+import ConfirmDialog from '../../components/ui/ConfirmDialog';
+import EmptyState from '../../components/ui/EmptyState';
+import { Field, Input } from '../../components/ui/Field';
+import { Skeleton } from '../../components/ui/Skeleton';
+import FormAlert from '../../components/forms/FormAlert';
 
-const Classes = () => {
-  const { user } = useAuth();
-  const { showToast } = useToast();
-  const [filters, setFilters] = useState({
-    search: "",
-    page: 1,
-    limit: 10,
-  });
-  const [selectedClass, setSelectedClass] = useState(null);
-  const [showModal, setShowModal] = useState(false);
-  const [modalType, setModalType] = useState("view"); // 'view', 'create', 'edit'
-  const [submitting, setSubmitting] = useState(false);
-  const [formData, setFormData] = useState({
-    name: "",
-    level: "",
-    teacherEmail: "",
-  });
-
-  const [assignData, setAssignData] = useState({ studentEmail: "" });
-
-  const {
-    data: classesData,
-    loading,
-    error,
-    refetch,
-  } = useApi(() => classService.getClasses());
-
-  const handleSubmitAssignment = async (e) => {
-    e.preventDefault();
-    if (!selectedClass) return;
-    setSubmitting(true);
-    try {
-      await enrollmentService.assignStudentToClass(assignData.studentEmail, selectedClass.id);
-      showToast("Student assigned to class", "success");
-      setShowModal(false);
-      setAssignData({ studentEmail: "" });
-      refetch();
-    } catch (error) {
-      showToast(getErrorMessage(error, "Failed to assign student"), "error");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleViewClass = (classItem) => {
-    setSelectedClass(classItem);
-    setModalType("view");
-    setShowModal(true);
-  };
-
-  const handleAddClass = () => {
-    setFormData({ name: "", level: "", teacherEmail: "" });
-    setModalType("create");
-    setShowModal(true);
-  };
-
-  const handleSubmitClass = async (e) => {
-    e.preventDefault();
-    setSubmitting(true);
-    
-    try {
-      await classService.createClass(formData);
-      showToast('Class created successfully!', 'success');
-      setShowModal(false);
-      setFormData({ name: "", level: "", teacherEmail: "" });
-      refetch();
-    } catch (error) {
-      showToast(getErrorMessage(error, 'Failed to create class'), 'error');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const ClassCard = ({ classItem }) => (
-    <div className="bg-white rounded-lg shadow border border-gray-200 hover:shadow-md transition-shadow duration-200">
-      <div className="p-6">
-        <div className="flex items-start justify-between">
-          <div className="flex-1">
-            <h3 className="text-lg font-semibold text-gray-900">
-              {classItem.name}
-            </h3>
-            <p className="text-gray-500">{classItem.level}</p>
-
-            {classItem.teacher && (
-              <p className="text-gray-600 flex items-center space-x-1 mt-2">
-                <FaChalkboardTeacher className="text-sm" />
-                <span>Teacher: {classItem.teacher.user.fullName}</span>
-              </p>
-            )}
-          </div>
-
-          <div className="flex space-x-2">
-            <button
-              onClick={() => handleViewClass(classItem)}
-              className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors duration-200"
-              title="View Details"
-            >
-              <FaEye />
-            </button>
-            {(user?.role === "ADMIN" || user?.role === "TEACHER") && (
-              <>
-                <button
-                  className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors duration-200"
-                  title="Edit Class"
-                >
-                  <FaEdit />
-                </button>
-                {user?.role === "ADMIN" && (
-                  <button
-                    className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors duration-200"
-                    title="Delete Class"
-                  >
-                    <FaTrash />
-                  </button>
-                )}
-              </>
-            )}
-          </div>
-        </div>
-
-        <div className="mt-4 flex flex-wrap gap-2">
-          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-            <FaSchool className="mr-1" />
-            {classItem.level}
-          </span>
-
-          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-            <FaUsers className="mr-1" />
-            {classItem._count?.students || 0} Students
-          </span>
-
-          {classItem._count && (
-            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-              <FaChalkboardTeacher className="mr-1" />
-              {classItem._count.subjects || 0} Subjects
-            </span>
-          )}
-        </div>
-
-        {classItem.teacher && (
-          <div className="mt-3 flex items-center justify-between text-sm text-gray-600">
-            <span>Teacher: {classItem.teacher.user.fullName}</span>
-            <span>{classItem.teacher.user.email}</span>
-          </div>
-        )}
-      </div>
-    </div>
+const ClassFormDialog = ({ isOpen, initial, isAdmin, onClose, onSaved }) => {
+  const formId = useId();
+  const editing = !!initial;
+  const form = useForm(
+    { name: initial?.name ?? '', level: initial?.level ?? '', teacherEmail: '' },
+    (v) => ({
+      name: validators.required(v.name, 'Class name'),
+      level: validators.required(v.level, 'Level'),
+      teacherEmail: validators.email(v.teacherEmail),
+    })
   );
 
-  const ClassDetailModal = () => (
+  return (
     <Modal
-      isOpen={showModal && modalType === "view"}
-      onClose={() => setShowModal(false)}
-      title="Class Details"
-      size="lg"
+      isOpen={isOpen}
+      onClose={onClose}
+      title={editing ? `Edit ${initial.name}` : 'Create class'}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={form.submitting}>Cancel</Button>
+          <Button type="submit" form={formId} loading={form.submitting}>{editing ? 'Save changes' : 'Create class'}</Button>
+        </>
+      }
     >
-      {selectedClass && (
+      <form
+        id={formId}
+        noValidate
+        className="space-y-4"
+        onSubmit={form.handleSubmit(async ({ name, level, teacherEmail }) => {
+          const saved = editing
+            ? await classesApi.update(initial.id, { name, level })
+            : await classesApi.create({ name, level, ...(isAdmin && teacherEmail && { teacherEmail }) });
+          onSaved(saved.class, editing);
+        })}
+      >
+        <FormAlert>{form.formError}</FormAlert>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field label="Class name" required hint="e.g. Grade 7A" error={form.errors.name}>
+            <Input {...form.field('name')} />
+          </Field>
+          <Field label="Level" required hint="e.g. Grade 7" error={form.errors.level}>
+            <Input {...form.field('level')} />
+          </Field>
+        </div>
+        {!editing &&
+          (isAdmin ? (
+            <Field label="Class teacher's email" optional hint="Leave blank to assign a teacher later." error={form.errors.teacherEmail}>
+              <Input type="email" inputMode="email" {...form.field('teacherEmail')} />
+            </Field>
+          ) : (
+            <p className="text-sm text-ink-muted">You'll be the class teacher for this class.</p>
+          ))}
+      </form>
+    </Modal>
+  );
+};
+
+const EnrollDialog = ({ cls, onClose, onDone }) => {
+  const formId = useId();
+  const form = useForm({ studentEmail: '' }, (v) => ({
+    studentEmail: validators.required(v.studentEmail, 'Email') || validators.email(v.studentEmail),
+  }));
+  return (
+    <Modal
+      isOpen={!!cls}
+      onClose={onClose}
+      size="sm"
+      title={`Add a student to ${cls?.name}`}
+      description="Enter the email the student registered with."
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={form.submitting}>Cancel</Button>
+          <Button type="submit" form={formId} loading={form.submitting}>Add student</Button>
+        </>
+      }
+    >
+      <form
+        id={formId}
+        noValidate
+        className="space-y-4"
+        onSubmit={form.handleSubmit(async ({ studentEmail }) => {
+          const { enrollment } = await enrollmentsApi.assignByEmail(studentEmail, cls.id);
+          onDone(enrollment.student.user.fullName);
+        })}
+      >
+        <FormAlert>{form.formError}</FormAlert>
+        <Field label="Student email" required error={form.errors.studentEmail}>
+          <Input type="email" inputMode="email" autoComplete="off" {...form.field('studentEmail')} />
+        </Field>
+      </form>
+    </Modal>
+  );
+};
+
+const ClassDetailDialog = ({ classId, onClose }) => {
+  const detail = useApi(() => classesApi.get(classId), [classId], { enabled: !!classId });
+  const c = detail.data?.class;
+  return (
+    <Modal isOpen={!!classId} onClose={onClose} title={c?.name ?? 'Class'} description={c && `${c.level} · ${c.students.length} students`} size="lg">
+      {!c ? (
+        <div className="space-y-3" role="status" aria-label="Loading class">
+          <Skeleton className="h-5 w-1/2" />
+          <Skeleton className="h-24 w-full" />
+        </div>
+      ) : (
         <div className="space-y-6">
-          <div className="flex items-center space-x-4">
-            <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center">
-              <FaSchool className="text-blue-600 text-2xl" />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="rounded-lg bg-surface-muted/60 p-4">
+              <p className="text-xs font-medium uppercase tracking-wide text-ink-subtle">Class teacher</p>
+              <p className="mt-1 font-semibold text-ink">{c.teacher?.user.fullName ?? 'Unassigned'}</p>
             </div>
-            <div>
-              <h2 className="text-2xl font-bold text-gray-900">
-                {selectedClass.name}
-              </h2>
-              <p className="text-gray-500">{selectedClass.level}</p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-gray-900">
-                Class Information
-              </h3>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  Class Name
-                </label>
-                <p className="mt-1 text-sm text-gray-900">
-                  {selectedClass.name}
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  Level
-                </label>
-                <p className="mt-1 text-sm text-gray-900">
-                  {selectedClass.level}
-                </p>
-              </div>
-
-              {selectedClass.teacher && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">
-                    Teacher
-                  </label>
-                  <p className="mt-1 text-sm text-gray-900">
-                    {selectedClass.teacher.user.fullName}
-                  </p>
-                  <p className="mt-1 text-xs text-gray-500">
-                    {selectedClass.teacher.user.email}
-                  </p>
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-gray-900">
-                Statistics
-              </h3>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="text-center p-3 bg-gray-50 rounded-lg">
-                  <div className="text-2xl font-bold text-blue-600">
-                    {selectedClass._count?.students || 0}
-                  </div>
-                  <div className="text-sm text-gray-600">Students</div>
-                </div>
-                <div className="text-center p-3 bg-gray-50 rounded-lg">
-                  <div className="text-2xl font-bold text-green-600">
-                    {selectedClass._count?.subjects || 0}
-                  </div>
-                  <div className="text-sm text-gray-600">Subjects</div>
-                </div>
+            <div className="rounded-lg bg-surface-muted/60 p-4">
+              <p className="text-xs font-medium uppercase tracking-wide text-ink-subtle">Subjects</p>
+              <div className="mt-1 flex flex-wrap gap-1">
+                {c.subjects.length ? c.subjects.map((s) => <Badge key={s.id}>{s.name}</Badge>) : <span className="text-sm text-ink-subtle">None yet</span>}
               </div>
             </div>
           </div>
-
-          {/* Students List */}
-          {selectedClass.students && selectedClass.students.length > 0 && (
-            <div className="border-t pt-4">
-              <h3 className="text-lg font-semibold text-gray-900 mb-3">
-                Students
-              </h3>
-              <div className="space-y-2">
-                {selectedClass.students.map((student) => (
-                  <div
-                    key={student.id}
-                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
-                  >
-                    <div>
-                      <h4 className="font-medium text-gray-900">
-                        {student.user.fullName}
-                      </h4>
-                      <p className="text-sm text-gray-600">
-                        {student.user.email}
-                      </p>
-                    </div>
-                    {student.parent && (
-                      <div className="text-right">
-                        <p className="text-sm text-gray-600">
-                          Parent: {student.parent.user.fullName}
-                        </p>
-                      </div>
-                    )}
-                  </div>
+          <div>
+            <h3 className="mb-2 text-sm font-semibold text-ink">Students</h3>
+            {c.students.length === 0 ? (
+              <p className="text-sm text-ink-subtle">No students enrolled yet.</p>
+            ) : (
+              <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {c.students.map((s) => (
+                  <li key={s.id} className="flex items-center gap-2 rounded-lg border border-line px-3 py-2">
+                    <Avatar name={s.user.fullName} size="xs" decorative />
+                    <Link to={`/students/${s.id}`} className="truncate rounded text-sm font-medium text-ink hover:text-primary-ink hover:underline">
+                      {s.user.fullName}
+                    </Link>
+                  </li>
                 ))}
-              </div>
-            </div>
-          )}
-
-          {/* Subjects List */}
-          {selectedClass.subjects && selectedClass.subjects.length > 0 && (
-            <div className="border-t pt-4">
-              <h3 className="text-lg font-semibold text-gray-900 mb-3">
-                Subjects
-              </h3>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                {selectedClass.subjects.map((subject) => (
-                  <div
-                    key={subject.id}
-                    className="p-2 bg-gray-50 rounded text-center"
-                  >
-                    <p className="font-medium text-gray-900">{subject.name}</p>
-                    <p className="text-xs text-gray-600">{subject.code}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+              </ul>
+            )}
+          </div>
         </div>
       )}
     </Modal>
   );
+};
 
-  if (loading) return <LoadingSpinner />;
-  if (error)
-    return <div className="text-red-500 text-center">Error: {error}</div>;
+const Classes = () => {
+  const { user } = useAuth();
+  const { showToast } = useToast();
+  const isAdmin = user.role === 'ADMIN';
+  const canManage = ['ADMIN', 'TEACHER'].includes(user.role) && !user.isDemo;
+  const classes = useApi(() => classesApi.list(), []);
+  const [query, setQuery] = useState('');
+  const [form, setForm] = useState(null); // { initial? }
+  const [enrolling, setEnrolling] = useState(null);
+  const [viewing, setViewing] = useState(null);
+  const [deleting, setDeleting] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const list = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const all = classes.data?.classes ?? [];
+    return q ? all.filter((c) => `${c.name} ${c.level} ${c.teacher?.user.fullName ?? ''}`.toLowerCase().includes(q)) : all;
+  }, [classes.data, query]);
+
+  const remove = async () => {
+    setBusy(true);
+    try {
+      await classesApi.remove(deleting.id);
+      showToast(`${deleting.name} was deleted.`);
+      setDeleting(null);
+      classes.refetch();
+    } catch (error) {
+      showToast(getErrorMessage(error), 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const total = classes.data?.classes?.length ?? 0;
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center space-y-4 sm:space-y-0">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 flex items-center space-x-3">
-            <FaSchool className="text-blue-500" />
-            <span>Classes</span>
-          </h1>
-          <p className="text-gray-600 mt-1">
-            Manage and view all classes in the system
-          </p>
-        </div>
+    <>
+      <PageHeader
+        title={user.role === 'TEACHER' ? 'My classes' : 'Classes'}
+        description={isAdmin ? 'Every class, its teacher and enrolment.' : 'Classes you teach.'}
+        actions={canManage && <Button icon={LuPlus} onClick={() => setForm({})}>Create class</Button>}
+      />
 
-        {(user?.role === "ADMIN" || user?.role === "TEACHER") && (
-          <Button onClick={handleAddClass}>
-            <FaPlus className="mr-2" />
-            Add Class
-          </Button>
-        )}
-      </div>
-
-      {/* Filters */}
-      <div className="bg-white p-6 rounded-lg shadow border border-gray-200">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Search Classes
-            </label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <FaSearch className="text-gray-400" />
-              </div>
-              <input
-                type="text"
-                placeholder="Search by class name..."
-                value={filters.search}
-                onChange={(e) =>
-                  setFilters((prev) => ({ ...prev, search: e.target.value }))
-                }
-                className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-              />
-            </div>
-          </div>
-
-          <div className="flex items-end">
-            <div className="text-sm text-gray-600">
-              Showing {classesData?.classes?.length || 0} classes
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Classes Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-        {classesData?.classes
-          ?.filter(
-            (classItem) =>
-              !filters.search ||
-              classItem.name
-                .toLowerCase()
-                .includes(filters.search.toLowerCase()) ||
-              classItem.level
-                .toLowerCase()
-                .includes(filters.search.toLowerCase())
-          )
-          .map((classItem) => (
-            <ClassCard key={classItem.id} classItem={classItem} />
-          ))}
-      </div>
-
-      {/* Empty State */}
-      {(!classesData?.classes || classesData.classes.length === 0) && (
-        <div className="text-center py-12">
-          <FaSchool className="mx-auto h-12 w-12 text-gray-400" />
-          <h3 className="mt-2 text-sm font-medium text-gray-900">No classes</h3>
-          <p className="mt-1 text-sm text-gray-500">
-            {filters.search
-              ? "No classes match your search."
-              : "Get started by creating your first class."}
-          </p>
+      {total > 0 && (
+        <div className="mb-4 max-w-xs">
+          <label htmlFor="class-search" className="sr-only">Search classes</label>
+          <Input id="class-search" type="search" icon={LuSearch} placeholder="Search classes or teachers" value={query} onChange={(e) => setQuery(e.target.value)} />
         </div>
       )}
 
-      <ClassDetailModal />
-      
-      {/* Assign Student Modal */}
-      <Modal
-        isOpen={showModal && modalType === "assign"}
-        onClose={() => setShowModal(false)}
-        title={`Assign Student to ${selectedClass?.name || 'Class'}`}
-      >
-        <form onSubmit={handleSubmitAssignment} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Student Email
-            </label>
-            <input
-              type="email"
-              required
-              value={assignData.studentEmail}
-              onChange={(e) => setAssignData({ ...assignData, studentEmail: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-              placeholder="student@example.com"
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              Enter the student's email address to assign them to this class
-            </p>
-          </div>
+      {classes.loading && !classes.data ? (
+        <div role="status" aria-live="polite" className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <span className="sr-only">Loading classes…</span>
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="card space-y-3 p-5" aria-hidden="true">
+              <Skeleton className="h-5 w-32" />
+              <Skeleton className="h-4 w-24" />
+              <Skeleton className="h-9 w-full" />
+            </div>
+          ))}
+        </div>
+      ) : classes.error ? (
+        <div className="card">
+          <EmptyState title="Couldn't load classes" description={classes.error} action={<Button variant="secondary" onClick={classes.refetch}>Try again</Button>} />
+        </div>
+      ) : total === 0 ? (
+        <div className="card">
+          <EmptyState
+            icon={LuSchool}
+            title="No classes yet"
+            description={canManage ? 'Create your first class to start enrolling students.' : 'You will see your classes here once you are enrolled.'}
+            action={canManage && <Button icon={LuPlus} onClick={() => setForm({})}>Create class</Button>}
+          />
+        </div>
+      ) : list.length === 0 ? (
+        <div className="card">
+          <EmptyState compact icon={LuSearchX} title="No matching classes" action={<Button variant="secondary" size="sm" onClick={() => setQuery('')}>Clear search</Button>} />
+        </div>
+      ) : (
+        <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {list.map((c) => (
+            <li key={c.id} className="card flex flex-col p-5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h2 className="truncate text-lg font-semibold text-ink">{c.name}</h2>
+                  <p className="text-sm text-ink-subtle">{c.level}</p>
+                </div>
+                {canManage && (
+                  <div className="-mr-2 -mt-1 flex">
+                    <Button variant="ghost" size="icon-sm" aria-label={`Edit ${c.name}`} onClick={() => setForm({ initial: c })}>
+                      <LuPencil aria-hidden="true" className="h-4 w-4" />
+                    </Button>
+                    {isAdmin && (
+                      <Button variant="danger-ghost" size="icon-sm" aria-label={`Delete ${c.name}`} onClick={() => setDeleting(c)}>
+                        <LuTrash2 aria-hidden="true" className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </div>
+              <dl className="mt-4 flex flex-wrap gap-2 text-sm">
+                <div className="flex items-center gap-1.5 rounded-full bg-surface-muted px-2.5 py-1 text-ink-muted">
+                  <dt><LuUsers aria-hidden="true" className="h-3.5 w-3.5" /><span className="sr-only">Students</span></dt>
+                  <dd className="tabular">{c._count.students} students</dd>
+                </div>
+                <div className="flex items-center gap-1.5 rounded-full bg-surface-muted px-2.5 py-1 text-ink-muted">
+                  <dt className="sr-only">Teacher</dt>
+                  <dd>{c.teacher?.user.fullName ?? 'No teacher yet'}</dd>
+                </div>
+              </dl>
+              <div className="mt-auto flex gap-2 pt-5">
+                <Button variant="secondary" size="sm" className="flex-1" onClick={() => setViewing(c.id)}>
+                  View class<span className="sr-only"> {c.name}</span>
+                </Button>
+                {canManage && (
+                  <Button variant="soft" size="sm" icon={LuUserPlus} className="flex-1" onClick={() => setEnrolling(c)}>
+                    Add student<span className="sr-only"> to {c.name}</span>
+                  </Button>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
 
-          <div className="flex space-x-3 pt-4">
-            <Button 
-              type="submit" 
-              className="flex-1"
-              loading={submitting}
-              loadingText="Assigning..."
-              disabled={submitting}
-            >
-              Assign Student
-            </Button>
-            <button
-              type="button"
-              onClick={() => setShowModal(false)}
-              disabled={submitting}
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Cancel
-            </button>
-          </div>
-        </form>
-      </Modal>
-      
-      {/* Create Class Modal */}
-      <Modal
-        isOpen={showModal && modalType === "create"}
-        onClose={() => setShowModal(false)}
-        title="Add New Class"
-      >
-        <form onSubmit={handleSubmitClass} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Class Name
-            </label>
-            <input
-              type="text"
-              required
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-              placeholder="e.g., Grade 10A"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Level
-            </label>
-            <input
-              type="text"
-              required
-              value={formData.level}
-              onChange={(e) => setFormData({ ...formData, level: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-              placeholder="e.g., Grade 10"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Teacher Email (Optional)
-            </label>
-            <input
-              type="email"
-              value={formData.teacherEmail}
-              onChange={(e) => setFormData({ ...formData, teacherEmail: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-              placeholder="teacher@example.com"
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              Enter the teacher's email address or leave empty to assign later
-            </p>
-          </div>
-
-          <div className="flex space-x-3 pt-4">
-            <Button 
-              type="submit" 
-              className="flex-1"
-              loading={submitting}
-              loadingText="Creating..."
-              disabled={submitting}
-            >
-              Create Class
-            </Button>
-            <button
-              type="button"
-              onClick={() => setShowModal(false)}
-              disabled={submitting}
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Cancel
-            </button>
-          </div>
-        </form>
-      </Modal>
-    </div>
+      {form && (
+        <ClassFormDialog
+          isOpen
+          initial={form.initial}
+          isAdmin={isAdmin}
+          onClose={() => setForm(null)}
+          onSaved={(saved, edited) => {
+            setForm(null);
+            showToast(edited ? `${saved.name} updated.` : `${saved.name} created.`);
+            classes.refetch();
+          }}
+        />
+      )}
+      {enrolling && (
+        <EnrollDialog
+          cls={enrolling}
+          onClose={() => setEnrolling(null)}
+          onDone={(name) => {
+            showToast(`${name} added to ${enrolling.name}.`);
+            setEnrolling(null);
+            classes.refetch();
+          }}
+        />
+      )}
+      <ClassDetailDialog classId={viewing} onClose={() => setViewing(null)} />
+      <ConfirmDialog
+        isOpen={!!deleting}
+        onCancel={() => setDeleting(null)}
+        onConfirm={remove}
+        loading={busy}
+        title={`Delete ${deleting?.name}?`}
+        description="Students will be unenrolled and its timetable removed. Classes that already have exams or attendance records can't be deleted."
+        confirmLabel="Delete class"
+      />
+    </>
   );
 };
 

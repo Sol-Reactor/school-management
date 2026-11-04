@@ -21,6 +21,12 @@ export const authService = {
     await api.post('/auth/logout', null, { skipAuthHandler: true });
   },
 
+  /** Restores the session on app start: the signed-in user, or null for visitors. */
+  async getSession() {
+    const { data } = await api.get('/auth/session', { skipAuthHandler: true });
+    return data.user;
+  },
+
   /** Returns the signed-in user, or throws (401 when there is no session). */
   async getProfile() {
     const { data } = await api.get('/auth/profile', { skipAuthHandler: true });

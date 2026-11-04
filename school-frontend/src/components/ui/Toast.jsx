@@ -1,52 +1,47 @@
-import React, { useEffect } from 'react';
-import { FaCheckCircle, FaExclamationCircle, FaInfoCircle, FaTimes } from 'react-icons/fa';
+import { useEffect, useRef, useState } from 'react';
+import { LuCircleAlert, LuCircleCheck, LuInfo, LuX } from 'react-icons/lu';
+import { cn } from '../../lib/cn';
 
-const Toast = ({ message, type = 'success', onClose, duration = 3000 }) => {
+const tones = {
+  success: { icon: LuCircleCheck, cls: 'text-success' },
+  error: { icon: LuCircleAlert, cls: 'text-danger' },
+  info: { icon: LuInfo, cls: 'text-info' },
+};
+
+/** A single toast. Pauses its timer while hovered or focused so it can be read. */
+const Toast = ({ message, type = 'success', duration = 4000, onClose }) => {
+  const [paused, setPaused] = useState(false);
+  const remaining = useRef(duration);
+  const { icon: Icon, cls } = tones[type] ?? tones.info;
+
   useEffect(() => {
-    if (duration) {
-      const timer = setTimeout(() => {
-        onClose();
-      }, duration);
-      return () => clearTimeout(timer);
-    }
-  }, [duration, onClose]);
-
-  const icons = {
-    success: <FaCheckCircle className="text-xl" />,
-    error: <FaExclamationCircle className="text-xl" />,
-    info: <FaInfoCircle className="text-xl" />,
-  };
-
-  const colors = {
-    success: {
-      bg: 'var(--color-success)',
-      text: 'white',
-    },
-    error: {
-      bg: 'var(--color-error)',
-      text: 'white',
-    },
-    info: {
-      bg: 'var(--color-primary)',
-      text: 'white',
-    },
-  };
+    if (!duration || paused) return undefined;
+    const started = Date.now();
+    const timer = setTimeout(onClose, remaining.current);
+    return () => {
+      clearTimeout(timer);
+      remaining.current -= Date.now() - started;
+    };
+  }, [duration, paused, onClose]);
 
   return (
     <div
-      className="fixed top-4 right-4 z-50 flex items-center space-x-3 px-4 py-3 rounded-lg shadow-lg animate-slideIn min-w-[300px] max-w-md"
-      style={{
-        backgroundColor: colors[type].bg,
-        color: colors[type].text,
-      }}
+      role={type === 'error' ? 'alert' : 'status'}
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+      onFocus={() => setPaused(true)}
+      onBlur={() => setPaused(false)}
+      className="pointer-events-auto flex w-full animate-pop-in items-start gap-3 rounded-xl border border-line bg-surface-raised p-4 shadow-lg sm:w-96"
     >
-      <div>{icons[type]}</div>
-      <p className="flex-1 font-medium">{message}</p>
+      <Icon aria-hidden="true" className={cn('mt-0.5 h-5 w-5 shrink-0', cls)} />
+      <p className="flex-1 text-sm font-medium text-ink">{message}</p>
       <button
+        type="button"
         onClick={onClose}
-        className="hover:opacity-75 transition-opacity"
+        aria-label="Dismiss notification"
+        className="-m-1 inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-ink-subtle transition-colors duration-fast hover:bg-surface-muted hover:text-ink"
       >
-        <FaTimes />
+        <LuX aria-hidden="true" className="h-4 w-4" />
       </button>
     </div>
   );

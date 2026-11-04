@@ -32,8 +32,9 @@ export const AuthProvider = ({ children }) => {
     try {
       for (let attempt = 0; attempt < 2; attempt++) {
         try {
-          const profile = await authService.getProfile();
-          dispatch(sessionStarted(profile));
+          const profile = await authService.getSession();
+          dispatch(serverStatusChanged('ready'));
+          dispatch(profile ? sessionStarted(profile) : sessionEnded());
           return;
         } catch (error) {
           if (!isNetworkError(error)) {

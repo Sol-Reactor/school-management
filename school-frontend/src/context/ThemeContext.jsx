@@ -1,135 +1,73 @@
 /* eslint-disable react-refresh/only-export-components -- context module exports its hook alongside the provider */
-import React, { createContext, useContext, useState, useEffect } from 'react';
+// Appearance preferences: theme (light / dark / system), text size and reduced motion.
+// Persisted per browser; applied to <html> data attributes that index.css reads.
+// index.html applies the same values before first paint to avoid a flash.
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
-const ThemeContext = createContext();
+const STORAGE_KEY = 'haya:prefs';
+const DEFAULTS = { theme: 'system', textSize: 'default', reduceMotion: false };
+
+const ThemeContext = createContext(null);
 
 export const useTheme = () => {
   const context = useContext(ThemeContext);
-  if (!context) {
-    throw new Error('useTheme must be used within a ThemeProvider');
-  }
+  if (!context) throw new Error('useTheme must be used within a ThemeProvider');
   return context;
 };
 
-export const themes = {
-  blue: {
-    name: 'Ocean Blue',
-    primary: '#3B82F6',
-    primaryDark: '#2563EB',
-    primaryLight: '#60A5FA',
-    secondary: '#8B5CF6',
-    accent: '#06B6D4',
-    background: '#F8FAFC',
-    surface: '#FFFFFF',
-    text: '#1E293B',
-    textSecondary: '#64748B',
-    border: '#E2E8F0',
-    success: '#10B981',
-    warning: '#F59E0B',
-    error: '#EF4444',
-    info: '#3B82F6',
-  },
-  purple: {
-    name: 'Royal Purple',
-    primary: '#8B5CF6',
-    primaryDark: '#7C3AED',
-    primaryLight: '#A78BFA',
-    secondary: '#EC4899',
-    accent: '#F59E0B',
-    background: '#FAF5FF',
-    surface: '#FFFFFF',
-    text: '#1E293B',
-    textSecondary: '#64748B',
-    border: '#E9D5FF',
-    success: '#10B981',
-    warning: '#F59E0B',
-    error: '#EF4444',
-    info: '#8B5CF6',
-  },
-  green: {
-    name: 'Forest Green',
-    primary: '#10B981',
-    primaryDark: '#059669',
-    primaryLight: '#34D399',
-    secondary: '#3B82F6',
-    accent: '#F59E0B',
-    background: '#F0FDF4',
-    surface: '#FFFFFF',
-    text: '#1E293B',
-    textSecondary: '#64748B',
-    border: '#D1FAE5',
-    success: '#10B981',
-    warning: '#F59E0B',
-    error: '#EF4444',
-    info: '#3B82F6',
-  },
-  orange: {
-    name: 'Sunset Orange',
-    primary: '#F97316',
-    primaryDark: '#EA580C',
-    primaryLight: '#FB923C',
-    secondary: '#EF4444',
-    accent: '#8B5CF6',
-    background: '#FFF7ED',
-    surface: '#FFFFFF',
-    text: '#1E293B',
-    textSecondary: '#64748B',
-    border: '#FFEDD5',
-    success: '#10B981',
-    warning: '#F59E0B',
-    error: '#EF4444',
-    info: '#3B82F6',
-  },
-  dark: {
-    name: 'Dark Mode',
-    primary: '#3B82F6',
-    primaryDark: '#2563EB',
-    primaryLight: '#60A5FA',
-    secondary: '#8B5CF6',
-    accent: '#06B6D4',
-    background: '#0F172A',
-    surface: '#1E293B',
-    text: '#F1F5F9',
-    textSecondary: '#94A3B8',
-    border: '#334155',
-    success: '#10B981',
-    warning: '#F59E0B',
-    error: '#EF4444',
-    info: '#3B82F6',
-  },
+const readPrefs = () => {
+  try {
+    return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') };
+  } catch {
+    return DEFAULTS;
+  }
 };
 
+const systemPrefersDark = () =>
+  typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches;
+
 export const ThemeProvider = ({ children }) => {
-  const [currentTheme, setCurrentTheme] = useState(() => {
-    return localStorage.getItem('theme') || 'blue';
-  });
+  const [prefs, setPrefs] = useState(readPrefs);
+  const [systemDark, setSystemDark] = useState(systemPrefersDark);
+
+  // Follow OS changes while on "system".
+  useEffect(() => {
+    const mq = window.matchMedia?.('(prefers-color-scheme: dark)');
+    if (!mq) return undefined;
+    const onChange = (e) => setSystemDark(e.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+
+  const resolvedTheme = prefs.theme === 'system' ? (systemDark ? 'dark' : 'light') : prefs.theme;
 
   useEffect(() => {
-    localStorage.setItem('theme', currentTheme);
-    
-    // Apply theme colors to CSS variables
-    const theme = themes[currentTheme];
     const root = document.documentElement;
-    
-    Object.entries(theme).forEach(([key, value]) => {
-      if (key !== 'name') {
-        root.style.setProperty(`--color-${key}`, value);
-      }
-    });
-  }, [currentTheme]);
-
-  const changeTheme = (themeName) => {
-    if (themes[themeName]) {
-      setCurrentTheme(themeName);
+    root.dataset.theme = resolvedTheme;
+    if (prefs.textSize === 'default') delete root.dataset.textSize;
+    else root.dataset.textSize = prefs.textSize;
+    if (prefs.reduceMotion) root.dataset.reduceMotion = 'true';
+    else delete root.dataset.reduceMotion;
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
+    } catch {
+      // Storage may be unavailable (private mode); preferences still apply for this session.
     }
-  };
+  }, [prefs, resolvedTheme]);
 
-  const value = {
-    currentTheme,
-    theme: themes[currentTheme],
-    themes,
-    changeTheme,
-  };
+  const setPreference = useCallback((key, value) => setPrefs((p) => ({ ...p, [key]: value })), []);
+
+  const value = useMemo(
+    () => ({
+      ...prefs,
+      resolvedTheme,
+      setTheme: (theme) => setPreference('theme', theme),
+      toggleTheme: () => setPreference('theme', resolvedTheme === 'dark' ? 'light' : 'dark'),
+      setPreference,
+      resetPreferences: () => setPrefs(DEFAULTS),
+    }),
+    [prefs, resolvedTheme, setPreference]
+  );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 };

@@ -2,193 +2,162 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  /* Default theme colors (Ocean Blue) */
-  --color-primary: #3B82F6;
-  --color-primaryDark: #2563EB;
-  --color-primaryLight: #60A5FA;
-  --color-secondary: #8B5CF6;
-  --color-accent: #06B6D4;
-  --color-background: #F8FAFC;
-  --color-surface: #FFFFFF;
-  --color-text: #1E293B;
-  --color-textSecondary: #64748B;
-  --color-border: #E2E8F0;
-  --color-success: #10B981;
-  --color-warning: #F59E0B;
-  --color-error: #EF4444;
-  --color-info: #3B82F6;
-  
-  /* Typography settings */
-  --base-font-size: 16px;
-  --base-font-weight: 400;
-  --animation-duration: 200ms;
-  --spacing-unit: 1rem;
-}
+/*
+ * Haya design tokens — see docs/design-system.md.
+ * Values are space-separated RGB channels so Tailwind can apply opacity.
+ * Every text/background pair below is checked for WCAG 2.1 AA (4.5:1 body text, 3:1 UI).
+ */
+@layer base {
+  :root {
+    color-scheme: light;
+    --canvas: 248 250 252; /* #f8fafc */
+    --surface: 255 255 255;
+    --surface-muted: 241 245 249; /* #f1f5f9 */
+    --surface-raised: 255 255 255;
+    --line: 226 232 240; /* #e2e8f0 */
+    --line-strong: 203 213 225; /* #cbd5e1 — decorative dividers only */
+    --input: 127 140 160; /* #7f8ca0 — form-field borders, 3.4:1 (WCAG 1.4.11) */
 
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
+    --ink: 15 23 42; /* #0f172a — 17.9:1 on surface */
+    --ink-muted: 71 85 105; /* #475569 — 7.6:1 */
+    --ink-subtle: 91 107 128; /* #5b6b80 — 5.4:1 on surface, 5.0:1 on surface-muted */
+    --ink-inverse: 255 255 255;
 
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  background-color: var(--color-background);
-  color: var(--color-text);
-  font-size: var(--base-font-size);
-  font-weight: var(--base-font-weight);
-  transition: font-size var(--animation-duration) ease, 
-              font-weight var(--animation-duration) ease;
-}
+    --primary: 15 118 110; /* #0f766e teal-700 — 5.5:1 with white */
+    --primary-hover: 17 94 89; /* #115e59 */
+    --primary-soft: 240 253 250; /* #f0fdfa — primary-ink on it 5.3:1 */
+    --primary-ink: 15 118 110; /* teal text on surfaces — 5.5:1 */
+    --on-primary: 255 255 255;
 
-/* Scrollbar styling */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
+    --accent: 180 83 9; /* #b45309 amber-700 — 5.0:1 */
+    --accent-soft: 255 251 235;
 
-::-webkit-scrollbar-track {
-  background: var(--color-background);
-}
+    --success: 21 128 61; /* #15803d — 5.0:1 */
+    --success-soft: 240 253 244;
+    --warning: 180 83 9; /* #b45309 */
+    --warning-soft: 255 251 235;
+    --danger: 185 28 28; /* #b91c1c — 6.5:1 */
+    --danger-soft: 254 242 242;
+    --info: 29 78 216; /* #1d4ed8 — 6.7:1 */
+    --info-soft: 239 246 255;
 
-::-webkit-scrollbar-thumb {
-  background: var(--color-border);
-  border-radius: 4px;
-}
+    /* Chart series — validated with the dataviz palette checker (all pairs, CVD-safe). */
+    --chart-1: 13 148 136; /* #0d9488 */
+    --chart-2: 235 104 52; /* #eb6834 */
+    --chart-3: 98 80 214; /* #6250d6 */
+    --chart-grid: 226 232 240;
 
-::-webkit-scrollbar-thumb:hover {
-  background: var(--color-textSecondary);
-}
-
-/* Custom animations */
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
+    --focus: 13 148 136;
+    --shadow: 15 23 42;
   }
-  to {
-    opacity: 1;
-    transform: translateY(0);
+
+  :root[data-theme='dark'] {
+    color-scheme: dark;
+    --canvas: 11 18 32; /* #0b1220 */
+    --surface: 19 28 43; /* #131c2b */
+    --surface-muted: 27 38 56; /* #1b2638 */
+    --surface-raised: 30 42 61;
+    --line: 38 50 71; /* #263247 */
+    --line-strong: 51 65 85;
+    --input: 100 116 143; /* #64748f — 3.6:1 on surface */
+
+    --ink: 226 232 240; /* #e2e8f0 — 13.6:1 on surface */
+    --ink-muted: 163 177 198; /* #a3b1c6 — 8.0:1 */
+    --ink-subtle: 138 153 176; /* #8a99b0 — 5.9:1, 5.3:1 on surface-muted */
+    --ink-inverse: 15 23 42;
+
+    --primary: 45 212 191; /* #2dd4bf teal-400 */
+    --primary-hover: 94 234 212;
+    --primary-soft: 19 52 56;
+    --primary-ink: 94 234 212; /* #5eead4 — 10.9:1 */
+    --on-primary: 4 47 46; /* #042f2e on teal-400 — 8.9:1 */
+
+    --accent: 251 191 36;
+    --accent-soft: 58 44 14;
+
+    --success: 74 222 128;
+    --success-soft: 18 50 34;
+    --warning: 251 191 36;
+    --warning-soft: 58 44 14;
+    --danger: 248 113 113;
+    --danger-soft: 62 24 28;
+    --info: 96 165 250;
+    --info-soft: 22 40 72;
+
+    --chart-1: 13 148 136; /* #0d9488 */
+    --chart-2: 217 89 38; /* #d95926 */
+    --chart-3: 144 133 233; /* #9085e9 */
+    --chart-grid: 38 50 71;
+
+    --focus: 45 212 191;
+    --shadow: 0 0 0;
   }
-}
 
-.animate-fadeIn {
-  animation: fadeIn 0.3s ease-out;
-}
+  /* Text-size preference (Settings → Appearance). Everything is rem-based. */
+  html { font-size: 100%; }
+  html[data-text-size='large'] { font-size: 112.5%; }
+  html[data-text-size='larger'] { font-size: 125%; }
 
-@keyframes slideIn {
-  from {
-    transform: translateX(-100%);
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
   }
-  to {
-    transform: translateX(0);
+
+  body {
+    @apply bg-canvas font-sans text-base text-ink antialiased;
+    min-height: 100dvh;
   }
-}
 
-.animate-slideIn {
-  animation: slideIn 0.3s ease-out;
-}
+  h1, h2, h3, h4 { @apply text-ink; text-wrap: balance; }
+  p { text-wrap: pretty; }
 
-/* Card hover effects */
-.card-hover {
-  transition: all 0.3s ease;
-}
-
-.card-hover:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.1);
-}
-
-/* Button styles */
-.btn-primary {
-  background-color: var(--color-primary);
-  color: white;
-  padding: 0.5rem 1rem;
-  border-radius: 0.5rem;
-  font-weight: 500;
-  transition: all 0.2s;
-}
-
-.btn-primary:hover {
-  background-color: var(--color-primaryDark);
-  transform: translateY(-1px);
-}
-
-.btn-primary:active {
-  transform: translateY(0);
-}
-
-/* Input styles */
-.input-field {
-  background-color: var(--color-surface);
-  border: 1px solid var(--color-border);
-  color: var(--color-text);
-  padding: 0.75rem;
-  border-radius: 0.5rem;
-  transition: all 0.2s;
-}
-
-.input-field:focus {
-  outline: none;
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-}
-
-/* Card styles */
-.card {
-  background-color: var(--color-surface);
-  border-radius: 0.75rem;
-  padding: 1.5rem;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-}
-
-/* Badge styles */
-.badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.25rem 0.75rem;
-  border-radius: 9999px;
-  font-size: 0.875rem;
-  font-weight: 500;
-}
-
-.badge-success {
-  background-color: rgba(16, 185, 129, 0.1);
-  color: var(--color-success);
-}
-
-.badge-warning {
-  background-color: rgba(245, 158, 11, 0.1);
-  color: var(--color-warning);
-}
-
-.badge-error {
-  background-color: rgba(239, 68, 68, 0.1);
-  color: var(--color-error);
-}
-
-.badge-info {
-  background-color: rgba(59, 130, 246, 0.1);
-  color: var(--color-info);
-}
-
-/* Toast Animation */
-@keyframes slideIn {
-  from {
-    transform: translateX(100%);
-    opacity: 0;
+  /* One consistent, always-visible keyboard focus ring. */
+  :focus { outline: none; }
+  :focus-visible {
+    outline: 2px solid rgb(var(--focus));
+    outline-offset: 2px;
+    border-radius: 0.375rem;
   }
-  to {
-    transform: translateX(0);
-    opacity: 1;
+
+  ::selection { background: rgb(var(--primary) / 0.2); }
+
+  /* Respect reduced motion: OS setting or the in-app preference. */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+  html[data-reduce-motion='true'] *,
+  html[data-reduce-motion='true'] *::before,
+  html[data-reduce-motion='true'] *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 
-.animate-slideIn {
-  animation: slideIn 0.3s ease-out;
+@layer components {
+  .card {
+    @apply rounded-xl border border-line bg-surface shadow-xs;
+  }
+  .skip-link {
+    @apply fixed left-4 top-4 z-toast -translate-y-24 rounded-md bg-primary px-4 py-2 font-semibold text-primary-on shadow-md transition-transform focus-visible:translate-y-0;
+  }
+  .container-page {
+    @apply mx-auto w-full max-w-content px-4 sm:px-6 lg:px-8;
+  }
+  /* Recharts: inherit tokens */
+  .recharts-text { fill: rgb(var(--ink-subtle)); font-size: 0.75rem; }
+  .recharts-cartesian-grid line { stroke: rgb(var(--chart-grid)); }
+}
+
+@layer utilities {
+  .tabular { font-variant-numeric: tabular-nums; }
+  .sr-only-focusable:not(:focus):not(:focus-within) {
+    @apply sr-only;
+  }
 }

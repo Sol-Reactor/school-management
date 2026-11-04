@@ -1,34 +1,36 @@
-// src/hooks/useApi.jsx
-import { useState, useEffect, useCallback } from 'react';
+// Fetch helper for pages. Keeps the previous data while refetching (no flash
+// to empty), ignores responses from stale requests, and exposes a readable error.
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { getErrorMessage } from '../services/api';
 
-const STABLE_EMPTY_ARRAY = [];
+export const useApi = (fetcher, deps = [], { enabled = true } = {}) => {
+  const [state, setState] = useState({ data: null, loading: enabled, error: null });
+  const requestId = useRef(0);
+  const fetcherRef = useRef(fetcher);
+  useEffect(() => {
+    fetcherRef.current = fetcher;
+  });
 
-export const useApi = (apiFunction, dependencies = []) => {
-  const deps = dependencies.length === 0 ? STABLE_EMPTY_ARRAY : dependencies;
-
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const memoizedApiFunction = useCallback(apiFunction, deps);
-
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  const run = useCallback(async () => {
+    const id = ++requestId.current;
+    setState((s) => ({ ...s, loading: true, error: null }));
     try {
-      const result = await memoizedApiFunction();
-      setData(result);
-    } catch (err) {
-      setError(err.response?.data?.message || 'Something went wrong');
-    } finally {
-      setLoading(false);
+      const data = await fetcherRef.current();
+      if (id === requestId.current) setState({ data, loading: false, error: null });
+      return data;
+    } catch (error) {
+      if (id === requestId.current) setState((s) => ({ ...s, loading: false, error: getErrorMessage(error) }));
+      return undefined;
     }
-  }, [memoizedApiFunction]);
+  }, []);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    if (enabled) run();
+    else setState((s) => ({ ...s, loading: false }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- callers pass explicit deps
+  }, [enabled, run, ...deps]);
 
-  return { data, loading, error, refetch: fetchData };
+  return { ...state, refetch: run, setData: (data) => setState((s) => ({ ...s, data })) };
 };
+
+export default useApi;

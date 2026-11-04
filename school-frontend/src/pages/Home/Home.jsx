@@ -1,326 +1,258 @@
-import React from 'react';
+import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { 
-  FaSchool, 
-  FaGraduationCap, 
-  FaChalkboardTeacher, 
-  FaUsers, 
-  FaBook,
-  FaTrophy,
-  FaEnvelope,
-  FaPhone,
-  FaMapMarkerAlt,
-  FaArrowRight
-} from 'react-icons/fa';
+import {
+  LuArrowRight,
+  LuBell,
+  LuCalendarCheck,
+  LuCalendarClock,
+  LuPresentation,
+  LuChartColumn,
+  LuGraduationCap,
+  LuLockKeyhole,
+  LuShieldCheck,
+  LuSparkles,
+  LuUsers,
+} from 'react-icons/lu';
+import { useAuth } from '../../context/AuthContext';
+import Logo from '../../components/brand/Logo';
+import HeroIllustration from '../../components/brand/HeroIllustration';
+import Button from '../../components/ui/Button';
+import ThemeToggle from '../../components/layout/ThemeToggle';
+import DemoPicker from '../../components/demo/DemoPicker';
+import { useTheme } from '../../context/ThemeContext';
+
+const ROLES = [
+  {
+    icon: LuShieldCheck,
+    role: 'Administrators',
+    lead: 'See the whole school in one place.',
+    steps: ['Create teacher accounts and classes', 'Watch attendance trends across every class', 'Spot students who need support before it shows on a report card'],
+  },
+  {
+    icon: LuPresentation,
+    role: 'Teachers',
+    lead: 'Spend less time on admin.',
+    steps: ["Take a class's register in seconds, on your phone", 'Enter marks in a gradebook with live class averages', 'Draft report-card comments with AI, then edit them yourself'],
+  },
+  {
+    icon: LuGraduationCap,
+    role: 'Students',
+    lead: 'Know where you stand.',
+    steps: ["Today's lessons and upcoming exams on one screen", 'Grades by subject, with your strongest areas', 'Attendance history you can actually read'],
+  },
+  {
+    icon: LuUsers,
+    role: 'Parents',
+    lead: 'Follow every child, calmly.',
+    steps: ['One dashboard for all your children', 'Weekly attendance and the latest marks', 'Plain-language progress summaries'],
+  },
+];
+
+const FEATURES = [
+  { icon: LuCalendarCheck, title: 'Registers that take seconds', body: 'Keyboard-friendly, works on a phone, and remembers what you have already saved. Past registers can be corrected safely.' },
+  { icon: LuChartColumn, title: 'Gradebooks with context', body: "Enter marks with validation and see the class average, highest and lowest as you go. Students see their bands at once." },
+  { icon: LuCalendarClock, title: 'Clash-free timetables', body: 'Haya refuses lessons that double-book a class or a teacher, and tells you exactly which lesson is in the way.' },
+  { icon: LuSparkles, title: 'Haya Insights', body: 'AI-written progress summaries and at-risk explanations, built on numbers Haya computes itself. Always labelled, always reviewed by a person.' },
+  { icon: LuLockKeyhole, title: 'Private by default', body: 'Parents see only their children and teachers see only their classes. These rules are enforced on the server for every request.' },
+  { icon: LuBell, title: 'Gentle notifications', body: 'Enrolments, new grades and attendance alerts arrive in one quiet inbox, without the email noise.' },
+];
+
+const Section = ({ id, eyebrow, title, intro, children, className = '' }) => (
+  <section id={id} aria-labelledby={`${id}-title`} className={`scroll-mt-20 py-20 sm:py-24 ${className}`}>
+    <div className="container-page">
+      <div className="mx-auto max-w-2xl text-center">
+        {eyebrow && <p className="text-sm font-semibold uppercase tracking-wider text-primary-ink">{eyebrow}</p>}
+        <h2 id={`${id}-title`} className="mt-2 text-3xl font-bold tracking-tight text-ink sm:text-4xl">
+          {title}
+        </h2>
+        {intro && <p className="mt-4 text-lg text-ink-muted">{intro}</p>}
+      </div>
+      <div className="mt-12">{children}</div>
+    </div>
+  </section>
+);
 
 const Home = () => {
-  return (
-    <div className="min-h-screen" style={{ backgroundColor: 'var(--color-background)' }}>
-      {/* Navigation */}
-      <nav className="shadow-sm" style={{ backgroundColor: 'var(--color-surface)' }}>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center space-x-3">
-              <div className="p-2 rounded-lg" style={{ backgroundColor: 'var(--color-primary)' }}>
-                <FaSchool className="h-6 w-6 text-white" />
-              </div>
-              <span className="text-2xl font-bold" style={{ color: 'var(--color-text)' }}>
-                Haya School
-              </span>
-            </div>
-            <div className="flex items-center space-x-4">
-              <Link
-                to="/login"
-                className="px-4 py-2 rounded-lg font-medium transition-colors"
-                style={{ color: 'var(--color-text)' }}
-              >
-                Login
-              </Link>
-              <Link
-                to="/register"
-                className="px-6 py-2 rounded-lg font-medium text-white transition-all"
-                style={{ backgroundColor: 'var(--color-primary)' }}
-              >
-                Get Started
-              </Link>
-            </div>
-          </div>
-        </div>
-      </nav>
+  const { isAuthenticated } = useAuth();
+  const { resolvedTheme } = useTheme();
 
-      {/* Hero Section */}
-      <section className="py-20 px-4">
-        <div className="max-w-7xl mx-auto">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+  useEffect(() => {
+    document.title = 'Haya — School management for admins, teachers, students and parents';
+  }, []);
+
+  return (
+    <div className="min-h-dvh bg-canvas">
+      <a href="#main" className="skip-link">Skip to main content</a>
+
+      <header className="sticky top-0 z-sticky border-b border-line/70 bg-canvas/85 backdrop-blur">
+        <nav aria-label="Primary" className="container-page flex h-16 items-center gap-6">
+          <Link to="/" className="rounded-md" aria-label="Haya home">
+            <Logo />
+          </Link>
+          <ul className="hidden items-center gap-6 text-sm font-medium text-ink-muted md:flex">
+            <li><a href="#how" className="rounded hover:text-ink">How it works</a></li>
+            <li><a href="#features" className="rounded hover:text-ink">Features</a></li>
+            <li><a href="#demo" className="rounded hover:text-ink">Live demo</a></li>
+          </ul>
+          <div className="ml-auto flex items-center gap-1 sm:gap-2">
+            <ThemeToggle />
+            {isAuthenticated ? (
+              <Button to="/dashboard" size="sm">Open dashboard</Button>
+            ) : (
+              <>
+                <Button to="/login" variant="ghost" size="sm" className="hidden sm:inline-flex">Sign in</Button>
+                <Button href="#demo" size="sm">Try the demo</Button>
+              </>
+            )}
+          </div>
+        </nav>
+      </header>
+
+      <main id="main" tabIndex={-1} className="focus:outline-none">
+        {/* Hero */}
+        <section className="relative overflow-hidden">
+          <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 -top-40 h-[32rem] bg-[radial-gradient(60%_60%_at_50%_0%,rgb(var(--primary)/0.14),transparent)]" />
+          <div className="container-page relative grid grid-cols-1 items-center gap-12 py-16 sm:py-20 lg:grid-cols-2 lg:py-28">
             <div>
-              <h1 className="text-5xl font-bold mb-6" style={{ color: 'var(--color-text)' }}>
-                Welcome to <span style={{ color: 'var(--color-primary)' }}>Haya School</span>
-              </h1>
-              <p className="text-xl mb-8" style={{ color: 'var(--color-textSecondary)' }}>
-                Empowering minds, shaping futures. Join our community of learners and educators 
-                dedicated to excellence in education.
+              <p className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1 text-xs font-semibold text-ink-muted">
+                <LuSparkles aria-hidden="true" className="h-3.5 w-3.5 text-primary-ink" />
+                Now with AI progress summaries
               </p>
-              <div className="flex space-x-4">
+              <h1 className="mt-5 text-4xl font-extrabold tracking-tight text-ink sm:text-5xl lg:text-6xl">
+                The calm way to <span className="text-primary-ink">run a school.</span>
+              </h1>
+              <p className="mt-6 max-w-xl text-lg text-ink-muted">
+                Haya puts attendance, grades and timetables in one workspace, with a focused view for every administrator, teacher, student and parent. Teachers spend less time on admin and families stay informed.
+              </p>
+              <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+                <Button href="#demo" size="lg" iconRight={LuArrowRight}>Try the live demo</Button>
+                <Button to="/register" variant="secondary" size="lg">Create an account</Button>
+              </div>
+              <p className="mt-4 text-sm text-ink-subtle">No sign-up needed for the demo. It's a read-only sample school.</p>
+            </div>
+            <HeroIllustration className="mx-auto w-full max-w-lg" />
+          </div>
+        </section>
+
+        {/* How it works */}
+        <Section id="how" eyebrow="How it works" title="One school, four perspectives" intro="Everyone signs in to the same Haya and sees only what's relevant to them.">
+          <ul className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+            {ROLES.map(({ icon: Icon, role, lead, steps }) => (
+              <li key={role} className="card flex flex-col p-6">
+                <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary-soft text-primary-ink">
+                  <Icon aria-hidden="true" className="h-5 w-5" />
+                </span>
+                <h3 className="mt-5 text-lg font-semibold text-ink">{role}</h3>
+                <p className="mt-1 text-sm font-medium text-ink-muted">{lead}</p>
+                <ol className="mt-5 space-y-3">
+                  {steps.map((s, i) => (
+                    <li key={s} className="flex gap-3 text-sm text-ink-muted">
+                      <span aria-hidden="true" className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-surface-muted text-xs font-bold text-ink">
+                        {i + 1}
+                      </span>
+                      {s}
+                    </li>
+                  ))}
+                </ol>
+              </li>
+            ))}
+          </ul>
+        </Section>
+
+        {/* Product screenshot */}
+        <section aria-labelledby="product-title" className="border-y border-line bg-surface-muted/40 py-20 sm:py-24">
+          <div className="container-page">
+            <div className="mx-auto max-w-2xl text-center">
+              <h2 id="product-title" className="text-3xl font-bold tracking-tight text-ink sm:text-4xl">
+                Information that's easy to act on
+              </h2>
+              <p className="mt-4 text-lg text-ink-muted">
+                Every dashboard leads with the few numbers that matter, then the trend behind them, then what's coming up next.
+              </p>
+            </div>
+            <figure className="mx-auto mt-12 max-w-5xl">
+              <div className="overflow-hidden rounded-2xl border border-line bg-surface shadow-lg">
+                <div aria-hidden="true" className="flex items-center gap-1.5 border-b border-line bg-surface-muted/60 px-4 py-2.5">
+                  <span className="h-2.5 w-2.5 rounded-full bg-line-strong" />
+                  <span className="h-2.5 w-2.5 rounded-full bg-line-strong" />
+                  <span className="h-2.5 w-2.5 rounded-full bg-line-strong" />
+                </div>
+                <img
+                  src={resolvedTheme === 'dark' ? '/screenshots/admin-dashboard-dark.png' : '/screenshots/admin-dashboard-light.png'}
+                  alt="Haya admin dashboard: KPI cards for students, classes, attendance and average grade above a weekly attendance chart, a recent activity feed and a classes table."
+                  width="1440"
+                  height="900"
+                  loading="lazy"
+                  decoding="async"
+                  className="block h-auto w-full"
+                />
+              </div>
+              <figcaption className="mt-4 text-center text-sm text-ink-subtle">The administrator dashboard, showing the demo school.</figcaption>
+            </figure>
+          </div>
+        </section>
+
+        {/* Features */}
+        <Section id="features" eyebrow="Features" title="Everything a school day needs, nothing it doesn't">
+          <ul className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {FEATURES.map(({ icon: Icon, title, body }) => (
+              <li key={title} className="card p-6">
+                <Icon aria-hidden="true" className="h-6 w-6 text-primary-ink" />
+                <h3 className="mt-4 text-base font-semibold text-ink">{title}</h3>
+                <p className="mt-2 text-sm text-ink-muted">{body}</p>
+              </li>
+            ))}
+          </ul>
+        </Section>
+
+        {/* Demo */}
+        <Section
+          id="demo"
+          eyebrow="Live demo"
+          title="Explore Haya as any role"
+          intro="Sign in to a sample school with 30 students, 8 weeks of attendance and real gradebooks. It's read-only, so click anything."
+          className="bg-surface-muted/40"
+        >
+          <div className="mx-auto max-w-2xl">
+            <DemoPicker />
+          </div>
+        </Section>
+
+        {/* Final CTA */}
+        <section className="py-20 sm:py-24">
+          <div className="container-page">
+            <div className="relative overflow-hidden rounded-3xl bg-primary px-6 py-14 text-center sm:px-12">
+              <h2 className="text-3xl font-bold tracking-tight text-primary-on sm:text-4xl">Ready to give your school a calmer week?</h2>
+              <p className="mx-auto mt-4 max-w-xl text-lg text-primary-on">
+                Students and parents can create an account in a minute. Teacher accounts are set up by your school administrator.
+              </p>
+              <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
                 <Link
                   to="/register"
-                  className="px-8 py-4 rounded-lg font-semibold text-white text-lg flex items-center space-x-2 transition-all hover:shadow-lg"
-                  style={{ backgroundColor: 'var(--color-primary)' }}
+                  className="inline-flex h-12 items-center justify-center rounded-lg bg-surface px-6 font-semibold text-ink shadow-sm transition-colors duration-fast hover:bg-surface-muted"
                 >
-                  <span>Enroll Now</span>
-                  <FaArrowRight />
+                  Create an account
                 </Link>
                 <a
-                  href="#contact"
-                  className="px-8 py-4 rounded-lg font-semibold text-lg border-2 transition-all"
-                  style={{ 
-                    borderColor: 'var(--color-primary)',
-                    color: 'var(--color-primary)'
-                  }}
+                  href="#demo"
+                  className="inline-flex h-12 items-center justify-center rounded-lg px-6 font-semibold text-primary-on ring-1 ring-inset ring-primary-on/50 transition-colors duration-fast hover:bg-primary-on/10"
                 >
-                  Contact Us
+                  Try the demo first
                 </a>
               </div>
             </div>
-            <div className="relative">
-              <div 
-                className="rounded-2xl overflow-hidden shadow-2xl"
-                style={{ backgroundColor: 'var(--color-primary)' }}
-              >
-                <img
-                  src="https://plus.unsplash.com/premium_photo-1663090073232-a7e475ef1f38?q=80&w=1157&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D"
-                  alt="Students learning"
-                  className="w-full h-96 object-cover opacity-90"
-                />
-              </div>
-            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      </main>
 
-      {/* Features Section */}
-      <section className="py-20 px-4" style={{ backgroundColor: 'var(--color-surface)' }}>
-        <div className="max-w-7xl mx-auto">
-          <div className="text-center mb-16">
-            <h2 className="text-4xl font-bold mb-4" style={{ color: 'var(--color-text)' }}>
-              Why Choose Haya School?
-            </h2>
-            <p className="text-xl" style={{ color: 'var(--color-textSecondary)' }}>
-              Excellence in education through innovation and dedication
-            </p>
+      <footer className="border-t border-line py-10">
+        <div className="container-page flex flex-col items-center justify-between gap-4 text-sm text-ink-subtle sm:flex-row">
+          <Logo textClassName="text-base" />
+          <p>Built with React, Express, PostgreSQL and the Claude API.</p>
+          <div className="flex gap-4">
+            <Link to="/login" className="rounded hover:text-ink">Sign in</Link>
+            <Link to="/register" className="rounded hover:text-ink">Register</Link>
           </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {[
-              {
-                icon: FaGraduationCap,
-                title: 'Quality Education',
-                description: 'Comprehensive curriculum designed to nurture academic excellence and critical thinking.'
-              },
-              {
-                icon: FaChalkboardTeacher,
-                title: 'Expert Teachers',
-                description: 'Dedicated and experienced educators committed to student success and growth.'
-              },
-              {
-                icon: FaUsers,
-                title: 'Community',
-                description: 'A supportive learning environment that fosters collaboration and friendship.'
-              },
-              {
-                icon: FaBook,
-                title: 'Modern Resources',
-                description: 'State-of-the-art facilities and digital tools for enhanced learning experiences.'
-              },
-              {
-                icon: FaTrophy,
-                title: 'Achievement',
-                description: 'Track record of academic excellence and student accomplishments.'
-              },
-              {
-                icon: FaSchool,
-                title: 'Safe Environment',
-                description: 'Secure and nurturing campus where students can thrive and excel.'
-              }
-            ].map((feature, index) => (
-              <div
-                key={index}
-                className="p-6 rounded-xl transition-all hover:shadow-lg"
-                style={{ backgroundColor: 'var(--color-background)' }}
-              >
-                <div 
-                  className="w-16 h-16 rounded-full flex items-center justify-center mb-4"
-                  style={{ backgroundColor: 'var(--color-primary)' + '20' }}
-                >
-                  <feature.icon className="text-3xl" style={{ color: 'var(--color-primary)' }} />
-                </div>
-                <h3 className="text-xl font-bold mb-2" style={{ color: 'var(--color-text)' }}>
-                  {feature.title}
-                </h3>
-                <p style={{ color: 'var(--color-textSecondary)' }}>
-                  {feature.description}
-                </p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Gallery Section */}
-      <section className="py-20 px-4">
-        <div className="max-w-7xl mx-auto">
-          <div className="text-center mb-16">
-            <h2 className="text-4xl font-bold mb-4" style={{ color: 'var(--color-text)' }}>
-              Our Campus Life
-            </h2>
-            <p className="text-xl" style={{ color: 'var(--color-textSecondary)' }}>
-              Experience the vibrant community at Haya School
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {[
-              'https://images.unsplash.com/photo-1427504494785-3a9ca7044f45?w=600&h=400&fit=crop',
-              'https://images.unsplash.com/photo-1503676260728-1c00da094a0b?w=600&h=400&fit=crop',
-              'https://images.unsplash.com/photo-1509062522246-3755977927d7?w=600&h=400&fit=crop',
-              'https://images.unsplash.com/photo-1524178232363-1fb2b075b655?w=600&h=400&fit=crop',
-              'https://images.unsplash.com/photo-1546410531-bb4caa6b424d?w=600&h=400&fit=crop',
-              'https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=600&h=400&fit=crop'
-            ].map((image, index) => (
-              <div
-                key={index}
-                className="rounded-xl overflow-hidden shadow-lg hover:shadow-2xl transition-all transform hover:scale-105"
-              >
-                <img
-                  src={image}
-                  alt={`Campus ${index + 1}`}
-                  className="w-full h-64 object-cover"
-                />
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Contact Section */}
-      <section id="contact" className="py-20 px-4" style={{ backgroundColor: 'var(--color-surface)' }}>
-        <div className="max-w-7xl mx-auto">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-            <div>
-              <h2 className="text-4xl font-bold mb-6" style={{ color: 'var(--color-text)' }}>
-                Get in Touch
-              </h2>
-              <p className="text-lg mb-8" style={{ color: 'var(--color-textSecondary)' }}>
-                Have questions? We'd love to hear from you. Send us a message and we'll respond as soon as possible.
-              </p>
-
-              <div className="space-y-6">
-                <div className="flex items-start space-x-4">
-                  <div 
-                    className="p-3 rounded-lg"
-                    style={{ backgroundColor: 'var(--color-primary)' + '20' }}
-                  >
-                    <FaMapMarkerAlt className="text-xl" style={{ color: 'var(--color-primary)' }} />
-                  </div>
-                  <div>
-                    <h3 className="font-semibold mb-1" style={{ color: 'var(--color-text)' }}>
-                      Address
-                    </h3>
-                    <p style={{ color: 'var(--color-textSecondary)' }}>
-                      123 Education Street, Learning City, LC 12345
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-start space-x-4">
-                  <div 
-                    className="p-3 rounded-lg"
-                    style={{ backgroundColor: 'var(--color-primary)' + '20' }}
-                  >
-                    <FaPhone className="text-xl" style={{ color: 'var(--color-primary)' }} />
-                  </div>
-                  <div>
-                    <h3 className="font-semibold mb-1" style={{ color: 'var(--color-text)' }}>
-                      Phone
-                    </h3>
-                    <p style={{ color: 'var(--color-textSecondary)' }}>
-                      +1 (555) 123-4567
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-start space-x-4">
-                  <div 
-                    className="p-3 rounded-lg"
-                    style={{ backgroundColor: 'var(--color-primary)' + '20' }}
-                  >
-                    <FaEnvelope className="text-xl" style={{ color: 'var(--color-primary)' }} />
-                  </div>
-                  <div>
-                    <h3 className="font-semibold mb-1" style={{ color: 'var(--color-text)' }}>
-                      Email
-                    </h3>
-                    <p style={{ color: 'var(--color-textSecondary)' }}>
-                      info@hayaschool.edu
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="card">
-              <form className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text)' }}>
-                    Name
-                  </label>
-                  <input
-                    type="text"
-                    className="input-field w-full"
-                    placeholder="Your name"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text)' }}>
-                    Email
-                  </label>
-                  <input
-                    type="email"
-                    className="input-field w-full"
-                    placeholder="your.email@example.com"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium mb-2" style={{ color: 'var(--color-text)' }}>
-                    Message
-                  </label>
-                  <textarea
-                    rows="4"
-                    className="input-field w-full"
-                    placeholder="How can we help you?"
-                  ></textarea>
-                </div>
-
-                <button
-                  type="submit"
-                  className="w-full py-3 rounded-lg font-semibold text-white transition-all"
-                  style={{ backgroundColor: 'var(--color-primary)' }}
-                >
-                  Send Message
-                </button>
-              </form>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Footer */}
-      <footer className="py-8 px-4" style={{ backgroundColor: 'var(--color-background)', borderTop: '1px solid var(--color-border)' }}>
-        <div className="max-w-7xl mx-auto text-center">
-          <p style={{ color: 'var(--color-textSecondary)' }}>
-            © 2024 Haya School. All rights reserved.
-          </p>
         </div>
       </footer>
     </div>
