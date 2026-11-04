@@ -4,6 +4,8 @@ import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
 import { useApi } from "../../hooks/useApi";
 import { classService } from "../../services/classService";
+import { enrollmentService } from "../../services/enrollmentService";
+import { getErrorMessage } from "../../services/api";
 import Button from "../../components/UI/Button";
 import LoadingSpinner from "../../components/UI/LoadingSpinner";
 import Modal from "../../components/UI/Modal";
@@ -36,12 +38,31 @@ const Classes = () => {
     teacherEmail: "",
   });
 
+  const [assignData, setAssignData] = useState({ studentEmail: "" });
+
   const {
     data: classesData,
     loading,
     error,
     refetch,
   } = useApi(() => classService.getClasses());
+
+  const handleSubmitAssignment = async (e) => {
+    e.preventDefault();
+    if (!selectedClass) return;
+    setSubmitting(true);
+    try {
+      await enrollmentService.assignStudentToClass(assignData.studentEmail, selectedClass.id);
+      showToast("Student assigned to class", "success");
+      setShowModal(false);
+      setAssignData({ studentEmail: "" });
+      refetch();
+    } catch (error) {
+      showToast(getErrorMessage(error, "Failed to assign student"), "error");
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const handleViewClass = (classItem) => {
     setSelectedClass(classItem);
@@ -66,8 +87,7 @@ const Classes = () => {
       setFormData({ name: "", level: "", teacherEmail: "" });
       refetch();
     } catch (error) {
-      console.error('Error creating class:', error);
-      showToast(error.response?.data?.message || 'Failed to create class', 'error');
+      showToast(getErrorMessage(error, 'Failed to create class'), 'error');
     } finally {
       setSubmitting(false);
     }

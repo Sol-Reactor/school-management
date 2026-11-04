@@ -1,12 +1,8 @@
 import React, { useState } from "react";
-import { useDispatch, useSelector } from "react-redux";
-import { Link, useNavigate } from "react-router-dom";
-import {
-  loginStart,
-  loginSuccess,
-  loginFailure,
-} from "../../store/slices/authSlice";
-import { authService } from "../../services/authServices";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useAuth } from "../../context/AuthContext";
+import { getErrorMessage } from "../../services/api";
+import { ServerWakeBanner } from "../../components/ServerStatus/ServerWakeNotice";
 import { useToast } from "../../context/ToastContext";
 import Button from "../../components/UI/Button";
 import { FaEnvelope, FaLock, FaSchool, FaGraduationCap } from "react-icons/fa";
@@ -17,10 +13,11 @@ const Login = () => {
     password: "",
   });
 
-  const dispatch = useDispatch();
   const navigate = useNavigate();
+  const location = useLocation();
+  const { login } = useAuth();
   const { showToast } = useToast();
-  const { loading, error } = useSelector((state) => state.auth);
+  const [loading, setLoading] = useState(false);
   const [localError, setLocalError] = useState(null);
 
   const handleChange = (e) => {
@@ -33,26 +30,16 @@ const Login = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLocalError(null);
-    dispatch(loginStart());
+    setLoading(true);
 
     try {
-      const result = await authService.login(formData);
-      dispatch(loginSuccess(result.token));
-      
-      // Fetch user profile after successful login
-      if (result.user) {
-        const { setUser } = await import("../../store/slices/userSlice");
-        dispatch(setUser(result.user));
-      }
-      
-      showToast('Login successful! Welcome back.', 'success');
-      navigate("/dashboard");
+      await login(formData);
+      showToast('Signed in. Welcome back!', 'success');
+      navigate(location.state?.from || "/dashboard", { replace: true });
     } catch (error) {
-      console.error('Login failed:', error);
-      const errorMessage = error.response?.data?.message || "Login failed";
-      setLocalError(errorMessage);
-      showToast(errorMessage, 'error');
-      dispatch(loginFailure(errorMessage));
+      setLocalError(getErrorMessage(error, "Sign-in failed. Please try again."));
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -156,9 +143,11 @@ const Login = () => {
               </p>
             </div>
 
+            <ServerWakeBanner />
             <form className="space-y-6" onSubmit={handleSubmit}>
               {localError && (
                 <div
+                  role="alert"
                   className="px-4 py-3 rounded-lg animate-fadeIn"
                   style={{
                     backgroundColor: "rgba(239, 68, 68, 0.1)",
@@ -265,25 +254,6 @@ const Login = () => {
                 </Link>
               </div>
             </form>
-          </div>
-
-          {/* Demo Credentials */}
-          <div
-            className="mt-6 p-4 rounded-lg text-sm"
-            style={{
-              backgroundColor: "var(--color-surface)",
-              border: "1px solid var(--color-border)",
-            }}
-          >
-            <p
-              className="font-semibold mb-2"
-              style={{ color: "var(--color-text)" }}
-            >
-              Demo Credentials:
-            </p>
-            <p style={{ color: "var(--color-textSecondary)" }}>
-              Admin: admin@school.com / password123
-            </p>
           </div>
         </div>
       </div>

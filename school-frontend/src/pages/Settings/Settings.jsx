@@ -11,7 +11,7 @@ import {
 } from "react-icons/fa";
 
 const Settings = () => {
-  const { currentTheme, themes, changeTheme } = useTheme();
+  const { currentTheme, changeTheme } = useTheme();
   const { showToast } = useToast();
 
   // Load settings from localStorage

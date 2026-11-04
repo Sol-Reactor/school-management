@@ -1,9 +1,9 @@
 // src/pages/Auth/Register.js
 import React, { useState } from "react";
-import { useDispatch, useSelector } from "react-redux";
 import { Link, useNavigate } from "react-router-dom";
-import { loginStart, loginSuccess, loginFailure } from "../../store/slices/authSlice";
-import { authService } from "../../services/authServices";
+import { useAuth } from "../../context/AuthContext";
+import { getErrorMessage, getFieldErrors } from "../../services/api";
+import { ServerWakeBanner } from "../../components/ServerStatus/ServerWakeNotice";
 import { useToast } from "../../context/ToastContext";
 import Button from "../../components/UI/Button.jsx";
 import {
@@ -11,7 +11,6 @@ import {
   FaEnvelope,
   FaLock,
   FaSchool,
-  FaUserTie,
   FaUserGraduate,
   FaUserFriends,
 } from "react-icons/fa";
@@ -27,10 +26,10 @@ const Register = () => {
   });
 
   const [errors, setErrors] = useState({});
-  const dispatch = useDispatch();
   const navigate = useNavigate();
+  const { register } = useAuth();
   const { showToast } = useToast();
-  const { loading } = useSelector((state) => state.auth);
+  const [loading, setLoading] = useState(false);
 
   const roles = [
     {
@@ -45,13 +44,8 @@ const Register = () => {
       icon: FaUserFriends,
       description: "Register as a parent",
     },
-    {
-      value: "TEACHER",
-      label: "Teacher",
-      icon: FaUserTie,
-      description: "Register as a teacher",
-    },
   ];
+  // Teacher and admin accounts are created by an administrator, not via public sign-up.
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -84,8 +78,10 @@ const Register = () => {
 
     if (!formData.password) {
       newErrors.password = "Password is required";
-    } else if (formData.password.length < 6) {
-      newErrors.password = "Password must be at least 6 characters";
+    } else if (formData.password.length < 8) {
+      newErrors.password = "Password must be at least 8 characters";
+    } else if (!/[A-Za-z]/.test(formData.password) || !/[0-9]/.test(formData.password)) {
+      newErrors.password = "Password must contain a letter and a number";
     }
 
     if (formData.password !== formData.confirmPassword) {
@@ -109,7 +105,7 @@ const Register = () => {
       return;
     }
 
-    dispatch(loginStart()); // Start loading
+    setLoading(true);
 
     try {
       // Prepare data for API
@@ -125,23 +121,16 @@ const Register = () => {
         registrationData.parentEmail = formData.parentEmail;
       }
 
-      const result = await authService.register(registrationData);
-      dispatch(loginSuccess(result.token));
-      
-      // Store user data after successful registration
-      if (result.user) {
-        const { setUser } = await import("../../store/slices/userSlice");
-        dispatch(setUser(result.user));
-      }
-      
-      showToast('Account created successfully! Welcome to Haya School.', 'success');
-      navigate("/dashboard");
+      await register(registrationData);
+      showToast('Account created. Welcome to Haya!', 'success');
+      navigate("/dashboard", { replace: true });
     } catch (error) {
-      const errorMessage =
-        error.response?.data?.message || "Registration failed";
-      setErrors({ submit: errorMessage });
-      showToast(errorMessage, 'error');
-      dispatch(loginFailure(errorMessage)); // Stop loading on error
+      setErrors({
+        ...getFieldErrors(error),
+        submit: getErrorMessage(error, "Registration failed. Please try again."),
+      });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -211,9 +200,10 @@ const Register = () => {
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-2xl">
         <div className="bg-white py-8 px-6 shadow sm:rounded-lg sm:px-10">
+          <ServerWakeBanner />
           <form className="space-y-6" onSubmit={handleSubmit}>
             {errors.submit && (
-              <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg">
+              <div role="alert" className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg">
                 {errors.submit}
               </div>
             )}
@@ -435,7 +425,7 @@ const Register = () => {
             <h3 className="text-sm font-medium text-gray-900 mb-3">
               What you'll get:
             </h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs text-gray-600">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-gray-600">
               <div className="flex items-center space-x-2">
                 <FaUserGraduate className="text-green-500" />
                 <span>Students: Access classes, grades, and attendance</span>
@@ -444,11 +434,10 @@ const Register = () => {
                 <FaUserFriends className="text-blue-500" />
                 <span>Parents: Monitor children's progress</span>
               </div>
-              <div className="flex items-center space-x-2">
-                <FaUserTie className="text-purple-500" />
-                <span>Teachers: Manage classes and students</span>
-              </div>
             </div>
+            <p className="mt-4 text-xs text-gray-600">
+              Teachers: your school administrator will create your account.
+            </p>
           </div>
         </div>
       </div>

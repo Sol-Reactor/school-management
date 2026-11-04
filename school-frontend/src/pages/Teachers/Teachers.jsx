@@ -1,6 +1,5 @@
 // src/pages/Teachers/Teachers.js
 import React, { useState } from "react";
-import { useAuth } from "../../context/AuthContext";
 import { useApi } from "../../hooks/useApi";
 import { userService } from "../../services/userService";
 import Button from "../../components/UI/Button";
@@ -17,7 +16,6 @@ import {
 } from "react-icons/fa";
 
 const Teachers = () => {
-  const { user } = useAuth();
   const [filters, setFilters] = useState({
     search: "",
     page: 1,
@@ -130,7 +128,7 @@ const Teachers = () => {
     </div>
   );
 
-  const TeacherDetailModal = () => (
+  const renderTeacherDetailModal = () => (
     <Modal
       isOpen={showModal}
       onClose={() => setShowModal(false)}
@@ -309,7 +307,7 @@ const Teachers = () => {
         </div>
       )}
 
-      <TeacherDetailModal />
+      {renderTeacherDetailModal()}
     </div>
   );
 };

@@ -1,10 +1,8 @@
 import React, { useState, useRef, useEffect } from "react";
-import { useDispatch } from "react-redux";
 import { useAuth } from "../../context/AuthContext";
 import { useTheme } from "../../context/ThemeContext";
 import { useToast } from "../../context/ToastContext";
 import { useNotifications } from "../../context/NotificationContext";
-import { logout } from "../../store/slices/authSlice";
 import {
   FaSignOutAlt,
   FaBars,
@@ -17,9 +15,8 @@ import { useNavigate } from "react-router-dom";
 import LoadingSpinner from "../UI/LoadingSpinner";
 
 const Header = ({ onMenuClick }) => {
-  const dispatch = useDispatch();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const { currentTheme, themes, changeTheme } = useTheme();
   const { showToast } = useToast();
   const { notifications, unreadCount, markAsRead, markAllAsRead } =
@@ -74,10 +71,7 @@ const Header = ({ onMenuClick }) => {
   const handleLogout = async () => {
     setIsLoggingOut(true);
 
-    // Simulate a brief delay for better UX
-    await new Promise((resolve) => setTimeout(resolve, 800));
-
-    dispatch(logout());
+    await logout();
     showToast("Logged out successfully. See you soon!", "info");
     setIsLoggingOut(false);
     navigate("/login");

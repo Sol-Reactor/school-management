@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- context module exports its hook alongside the provider */
 import React, { createContext, useContext, useState } from 'react';
 import Toast from '../components/UI/Toast';
 
