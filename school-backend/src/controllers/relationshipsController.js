@@ -1,174 +1,82 @@
-import { PrismaClient } from "@prisma/client";
+import prisma from '../lib/prisma.js';
+import { forbidden, notFound } from '../lib/errors.js';
+import { assertCanViewStudent, assertSelfOrAdmin } from '../lib/access.js';
 
-const prisma = new PrismaClient();
+const userSummary = { select: { id: true, fullName: true, email: true, createdAt: true } };
 
-// Link student to parent by email
+// POST /api/relationships/students/:studentId/parents (the student/admin)
 export const linkStudentToParent = async (req, res) => {
-  try {
-    const { studentId } = req.params;
-    const { parentEmail } = req.body;
+  const { studentId } = req.params;
+  assertSelfOrAdmin(req.user, 'student', studentId);
 
-    if (!parentEmail) {
-      return res.status(400).json({ message: 'Parent email is required' });
-    }
+  const parent = await prisma.parent.findFirst({
+    where: { user: { email: req.body.parentEmail } },
+    select: { id: true },
+  });
+  if (!parent) throw notFound('No parent account found with this email');
 
-    // Find parent by email
-    const parent = await prisma.parent.findFirst({
-      where: {
-        user: {
-          email: parentEmail
-        }
-      }
-    });
-
-    if (!parent) {
-      return res.status(404).json({ message: 'Parent not found with this email' });
-    }
-
-    // Link student to parent
-    const student = await prisma.student.update({
-      where: { id: studentId },
-      data: {
-        parent: {
-          connect: { id: parent.id }
-        }
-      },
-      include: {
-        user: {
-          select: {
-            fullName: true,
-            email: true
-          }
-        },
-        parent: {
-          include: {
-            user: {
-              select: {
-                fullName: true,
-                email: true
-              }
-            }
-          }
-        }
-      }
-    });
-
-    res.json({
-      message: 'Student linked to parent successfully',
-      student
-    });
-  } catch (error) {
-    console.error('Error linking student to parent:', error);
-    res.status(500).json({ message: 'Server error linking student to parent' });
-  }
+  const student = await prisma.student.update({
+    where: { id: studentId },
+    data: { parentId: parent.id },
+    include: {
+      user: { select: { fullName: true, email: true } },
+      parent: { include: { user: { select: { fullName: true, email: true } } } },
+    },
+  });
+  res.json({ message: 'Parent linked', student });
 };
 
-// Unlink student from parent
+// DELETE /api/relationships/students/:studentId/parents/:parentId
+// Allowed for the student, the linked parent, or an admin.
 export const unlinkStudentFromParent = async (req, res) => {
-  try {
-    const { studentId, parentId } = req.params;
+  const { studentId, parentId } = req.params;
 
-    const student = await prisma.student.update({
-      where: { id: studentId },
-      data: {
-        parent: {
-          disconnect: true
-        }
-      },
-      include: {
-        user: {
-          select: {
-            fullName: true,
-            email: true
-          }
-        }
-      }
-    });
+  const student = await prisma.student.findUnique({
+    where: { id: studentId },
+    select: { id: true, parentId: true },
+  });
+  if (!student || student.parentId !== parentId) throw notFound('This parent is not linked to the student');
 
-    res.json({
-      message: 'Student unlinked from parent successfully',
-      student
-    });
-  } catch (error) {
-    console.error('Error unlinking student from parent:', error);
-    res.status(500).json({ message: 'Server error unlinking student from parent' });
-  }
+  const allowed =
+    req.user.role === 'ADMIN' ||
+    req.user.student?.id === studentId ||
+    req.user.parent?.id === parentId;
+  if (!allowed) throw forbidden();
+
+  const updated = await prisma.student.update({
+    where: { id: studentId },
+    data: { parentId: null },
+    include: { user: { select: { fullName: true, email: true } } },
+  });
+  res.json({ message: 'Parent unlinked', student: updated });
 };
 
-// Get student's parents
+// GET /api/relationships/students/:studentId/parents
 export const getStudentParents = async (req, res) => {
-  try {
-    const { studentId } = req.params;
+  const { studentId } = req.params;
+  await assertCanViewStudent(req.user, studentId);
 
-    const student = await prisma.student.findUnique({
-      where: { id: studentId },
-      include: {
-        parent: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                fullName: true,
-                email: true,
-                createdAt: true
-              }
-            }
-          }
-        }
-      }
-    });
-
-    if (!student) {
-      return res.status(404).json({ message: 'Student not found' });
-    }
-
-    res.json({
-      parents: student.parent ? [student.parent] : []
-    });
-  } catch (error) {
-    console.error('Error fetching student parents:', error);
-    res.status(500).json({ message: 'Server error fetching student parents' });
-  }
+  const student = await prisma.student.findUnique({
+    where: { id: studentId },
+    include: { parent: { include: { user: userSummary } } },
+  });
+  if (!student) throw notFound('Student not found');
+  res.json({ parents: student.parent ? [student.parent] : [] });
 };
 
-// Get parent's students
+// GET /api/relationships/parents/:parentId/students (the parent/admin)
 export const getParentStudents = async (req, res) => {
-  try {
-    const { parentId } = req.params;
+  const { parentId } = req.params;
+  assertSelfOrAdmin(req.user, 'parent', parentId);
 
-    const parent = await prisma.parent.findUnique({
-      where: { id: parentId },
-      include: {
-        students: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                fullName: true,
-                email: true,
-                createdAt: true
-              }
-            },
-            class: {
-              select: {
-                name: true,
-                level: true
-              }
-            }
-          }
-        }
-      }
-    });
-
-    if (!parent) {
-      return res.status(404).json({ message: 'Parent not found' });
-    }
-
-    res.json({
-      students: parent.students
-    });
-  } catch (error) {
-    console.error('Error fetching parent students:', error);
-    res.status(500).json({ message: 'Server error fetching parent students' });
-  }
+  const parent = await prisma.parent.findUnique({
+    where: { id: parentId },
+    include: {
+      students: {
+        include: { user: userSummary, class: { select: { name: true, level: true } } },
+      },
+    },
+  });
+  if (!parent) throw notFound('Parent not found');
+  res.json({ students: parent.students });
 };

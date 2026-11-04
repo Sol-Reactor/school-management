@@ -1,26 +1,22 @@
 import express from 'express';
 import {
-  getStudents,
-  getStudentById,
-  updateStudent,
   assignToClass,
-  assignToParent
+  assignToParent,
+  getStudentById,
+  getStudents,
 } from '../controllers/studentsController.js';
-import {
-  authenticate,
-  requireAdmin,
-  requireTeacherOrAdmin,
-  authorize
-} from '../middleware/auth.js';
+import { authenticate, requireAdmin, requireTeacherOrAdmin } from '../middleware/auth.js';
+import { validate } from '../middleware/validate.js';
+import { assignClassSchema, assignParentSchema, listStudentsQuery } from '../validation/schemas.js';
 
 const router = express.Router();
 
-router.get('/', authenticate, requireTeacherOrAdmin, getStudents);
-// Students can view their own profile, teachers/parents/admins can view others
-router.get('/:id', authenticate, authorize('STUDENT', 'TEACHER', 'PARENT', 'ADMIN'), getStudentById);
-// Only students can update their own profile
-router.put('/:id', authenticate, requireAdmin, updateStudent); // Usually admin only for updates
-router.patch('/:id/class', authenticate, requireAdmin, assignToClass);
-router.patch('/:id/parent', authenticate, requireAdmin, assignToParent);
+router.use(authenticate);
+
+router.get('/', requireTeacherOrAdmin, validate({ query: listStudentsQuery }), getStudents);
+// Access to a single student is checked per-record in the controller (lib/access.js).
+router.get('/:id', getStudentById);
+router.patch('/:id/class', requireAdmin, validate({ body: assignClassSchema }), assignToClass);
+router.patch('/:id/parent', requireAdmin, validate({ body: assignParentSchema }), assignToParent);
 
 export default router;

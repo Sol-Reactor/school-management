@@ -1,25 +1,34 @@
 import express from 'express';
 import {
-  getSubjects,
-  getSubjectById,
+  assignSubjectToClass,
   createSubject,
-  updateSubject,
   deleteSubject,
-  assignSubjectToClass
+  getSubjectById,
+  getSubjects,
+  updateSubject,
 } from '../controllers/subjectsController.js';
+import { authenticate, requireAdmin, requireTeacherOrAdmin } from '../middleware/auth.js';
+import { validate } from '../middleware/validate.js';
 import {
-  authenticate,
-  requireAdmin,
-  requireTeacherOrAdmin
-} from '../middleware/auth.js';
+  assignSubjectClassSchema,
+  createSubjectSchema,
+  updateSubjectSchema,
+} from '../validation/schemas.js';
 
 const router = express.Router();
 
-router.get('/', authenticate, getSubjects);
-router.get('/:id', authenticate, getSubjectById);
-router.post('/', authenticate, requireTeacherOrAdmin, createSubject);
-router.put('/:id', authenticate, requireTeacherOrAdmin, updateSubject);
-router.delete('/:id', authenticate, requireAdmin, deleteSubject);
-router.patch('/:id/assign-class', authenticate, requireTeacherOrAdmin, assignSubjectToClass);
+router.use(authenticate);
+
+router.get('/', getSubjects);
+router.get('/:id', getSubjectById);
+router.post('/', requireTeacherOrAdmin, validate({ body: createSubjectSchema }), createSubject);
+router.put('/:id', requireTeacherOrAdmin, validate({ body: updateSubjectSchema }), updateSubject);
+router.delete('/:id', requireAdmin, deleteSubject);
+router.patch(
+  '/:id/assign-class',
+  requireTeacherOrAdmin,
+  validate({ body: assignSubjectClassSchema }),
+  assignSubjectToClass
+);
 
 export default router;

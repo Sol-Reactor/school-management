@@ -1,267 +1,107 @@
-import { PrismaClient } from "@prisma/client";
+import prisma from '../lib/prisma.js';
+import { conflict, notFound } from '../lib/errors.js';
+import { assertCanManageClass } from '../lib/access.js';
 
-const prisma = new PrismaClient();
+const classSummary = { select: { id: true, name: true, level: true } };
 
-// Get all subjects
+// GET /api/subjects — subject catalogue (non-sensitive).
 export const getSubjects = async (req, res) => {
-  try {
-    const { classId } = req.query;
-    
-    const where = classId ? { classId } : {};
-
-    const subjects = await prisma.subject.findMany({
-      where,
-      include: {
-        class: {
-          select: {
-            name: true,
-            level: true
-          }
-        },
-        _count: {
-          select: {
-            timetable: true,
-            exams: true,
-            grades: true
-          }
-        }
-      },
-      orderBy: {
-        name: 'asc'
-      }
-    });
-
-    res.json({ subjects });
-  } catch (error) {
-    console.error('Error fetching subjects:', error);
-    res.status(500).json({ message: 'Server error fetching subjects' });
-  }
+  const { classId } = req.query;
+  const subjects = await prisma.subject.findMany({
+    where: typeof classId === 'string' && classId ? { classId } : {},
+    include: {
+      class: classSummary,
+      _count: { select: { timetable: true, exams: true, grades: true } },
+    },
+    orderBy: { name: 'asc' },
+  });
+  res.json({ subjects });
 };
 
-// Get subject by ID
+// GET /api/subjects/:id — student grades are only included for admins.
 export const getSubjectById = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const subject = await prisma.subject.findUnique({
-      where: { id },
-      include: {
-        class: {
-          select: {
-            id: true,
-            name: true,
-            level: true
-          }
+  const isAdmin = req.user.role === 'ADMIN';
+  const subject = await prisma.subject.findUnique({
+    where: { id: req.params.id },
+    include: {
+      class: classSummary,
+      timetable: {
+        include: {
+          class: { select: { name: true } },
+          teacher: { include: { user: { select: { fullName: true } } } },
         },
-        timetable: {
-          include: {
-            class: {
-              select: {
-                name: true
-              }
-            },
-            teacher: {
-              include: {
-                user: {
-                  select: {
-                    fullName: true
-                  }
-                }
-              }
-            }
-          }
+      },
+      exams: {
+        include: {
+          class: { select: { name: true } },
+          teacher: { include: { user: { select: { fullName: true } } } },
         },
-        exams: {
-          include: {
-            class: {
-              select: {
-                name: true
-              }
-            },
-            teacher: {
-              include: {
-                user: {
-                  select: {
-                    fullName: true
-                  }
-                }
-              }
-            }
-          },
-          orderBy: {
-            date: 'desc'
-          }
-        },
+        orderBy: { date: 'desc' },
+      },
+      ...(isAdmin && {
         grades: {
           include: {
-            student: {
-              include: {
-                user: {
-                  select: {
-                    fullName: true
-                  }
-                }
-              }
-            },
-            exam: {
-              select: {
-                name: true,
-                date: true
-              }
-            }
+            student: { include: { user: { select: { fullName: true } } } },
+            exam: { select: { name: true, date: true } },
           },
-          orderBy: {
-            exam: {
-              date: 'desc'
-            }
-          },
-          take: 20
-        }
-      }
-    });
-
-    if (!subject) {
-      return res.status(404).json({ message: 'Subject not found' });
-    }
-
-    res.json({ subject });
-  } catch (error) {
-    console.error('Error fetching subject:', error);
-    res.status(500).json({ message: 'Server error fetching subject' });
-  }
+          orderBy: { exam: { date: 'desc' } },
+          take: 20,
+        },
+      }),
+    },
+  });
+  if (!subject) throw notFound('Subject not found');
+  res.json({ subject });
 };
 
-// Create subject
+// POST /api/subjects (teacher/admin)
 export const createSubject = async (req, res) => {
-  try {
-    const { name, code, classId } = req.body;
+  const { name, code, classId } = req.body;
+  if (classId) await assertCanManageClass(req.user, classId);
 
-    if (!name || !code) {
-      return res.status(400).json({ message: 'Name and code are required' });
-    }
-
-    const subject = await prisma.subject.create({
-      data: {
-        name,
-        code,
-        classId
-      },
-      include: {
-        class: {
-          select: {
-            name: true
-          }
-        }
-      }
-    });
-
-    res.status(201).json({
-      message: 'Subject created successfully',
-      subject
-    });
-  } catch (error) {
-    console.error('Error creating subject:', error);
-    
-    if (error.code === 'P2002') {
-      return res.status(400).json({ message: 'Subject code already exists' });
-    }
-    
-    res.status(500).json({ message: 'Server error creating subject' });
-  }
+  const subject = await prisma.subject.create({
+    data: { name, code, classId: classId ?? null },
+    include: { class: { select: { name: true } } },
+  });
+  res.status(201).json({ message: 'Subject created', subject });
 };
 
-// Update subject
+// PUT /api/subjects/:id (teacher/admin)
 export const updateSubject = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { name, code, classId } = req.body;
-
-    const subject = await prisma.subject.update({
-      where: { id },
-      data: {
-        ...(name && { name }),
-        ...(code && { code }),
-        ...(classId && { classId })
-      },
-      include: {
-        class: {
-          select: {
-            name: true
-          }
-        }
-      }
-    });
-
-    res.json({
-      message: 'Subject updated successfully',
-      subject
-    });
-  } catch (error) {
-    console.error('Error updating subject:', error);
-    
-    if (error.code === 'P2025') {
-      return res.status(404).json({ message: 'Subject not found' });
-    }
-    
-    if (error.code === 'P2002') {
-      return res.status(400).json({ message: 'Subject code already exists' });
-    }
-    
-    res.status(500).json({ message: 'Server error updating subject' });
-  }
+  if (req.body.classId) await assertCanManageClass(req.user, req.body.classId);
+  const subject = await prisma.subject.update({
+    where: { id: req.params.id },
+    data: req.body,
+    include: { class: { select: { name: true } } },
+  });
+  res.json({ message: 'Subject updated', subject });
 };
 
-// Delete subject
+// DELETE /api/subjects/:id (admin)
 export const deleteSubject = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    await prisma.subject.delete({
-      where: { id }
-    });
-
-    res.json({ message: 'Subject deleted successfully' });
-  } catch (error) {
-    console.error('Error deleting subject:', error);
-    
-    if (error.code === 'P2025') {
-      return res.status(404).json({ message: 'Subject not found' });
-    }
-    
-    res.status(500).json({ message: 'Server error deleting subject' });
+  const { id } = req.params;
+  const subject = await prisma.subject.findUnique({
+    where: { id },
+    select: { _count: { select: { exams: true, grades: true } } },
+  });
+  if (!subject) throw notFound('Subject not found');
+  if (subject._count.exams > 0 || subject._count.grades > 0) {
+    throw conflict('This subject has exams or grades and cannot be deleted.');
   }
+  await prisma.$transaction([
+    prisma.timetable.deleteMany({ where: { subjectId: id } }),
+    prisma.subject.delete({ where: { id } }),
+  ]);
+  res.json({ message: 'Subject deleted' });
 };
 
-// Assign subject to class
+// PATCH /api/subjects/:id/assign-class (class teacher/admin)
 export const assignSubjectToClass = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { classId } = req.body;
-
-    const subject = await prisma.subject.update({
-      where: { id },
-      data: { classId },
-      include: {
-        class: {
-          select: {
-            name: true,
-            level: true
-          }
-        }
-      }
-    });
-
-    res.json({
-      message: 'Subject assigned to class successfully',
-      subject
-    });
-  } catch (error) {
-    console.error('Error assigning subject to class:', error);
-    
-    if (error.code === 'P2025') {
-      return res.status(404).json({ message: 'Subject or class not found' });
-    }
-    
-    res.status(500).json({ message: 'Server error assigning subject to class' });
-  }
+  await assertCanManageClass(req.user, req.body.classId);
+  const subject = await prisma.subject.update({
+    where: { id: req.params.id },
+    data: { classId: req.body.classId },
+    include: { class: { select: { name: true, level: true } } },
+  });
+  res.json({ message: 'Subject assigned to class', subject });
 };

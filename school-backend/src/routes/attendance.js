@@ -2,25 +2,29 @@ import express from 'express';
 import {
   getAttendance,
   getAttendanceById,
+  getClassAttendance,
+  getStudentAttendance,
   markAttendance,
   updateAttendance,
-  getStudentAttendance,
-  getClassAttendance
 } from '../controllers/attendanceController.js';
+import { authenticate, requireTeacherOrAdmin } from '../middleware/auth.js';
+import { validate } from '../middleware/validate.js';
 import {
-  authenticate,
-  requireTeacherOrAdmin,
-  requireOwnership,
-  requireClassOwnership
-} from '../middleware/auth.js';
+  dateRangeQuery,
+  listAttendanceQuery,
+  markAttendanceSchema,
+  updateAttendanceSchema,
+} from '../validation/schemas.js';
 
 const router = express.Router();
 
-router.get('/', authenticate, requireTeacherOrAdmin, getAttendance);
-router.get('/student/:studentId', authenticate, requireOwnership('student'), getStudentAttendance);
-router.get('/class/:classId', authenticate, requireClassOwnership, getClassAttendance);
-router.get('/:id', authenticate, requireOwnership('attendance'), getAttendanceById);
-router.post('/', authenticate, requireTeacherOrAdmin, markAttendance);
-router.put('/:id', authenticate, requireTeacherOrAdmin, updateAttendance);
+router.use(authenticate);
+
+router.get('/', requireTeacherOrAdmin, validate({ query: listAttendanceQuery }), getAttendance);
+router.get('/student/:studentId', validate({ query: dateRangeQuery }), getStudentAttendance);
+router.get('/class/:classId', requireTeacherOrAdmin, validate({ query: dateRangeQuery }), getClassAttendance);
+router.get('/:id', getAttendanceById);
+router.post('/', requireTeacherOrAdmin, validate({ body: markAttendanceSchema }), markAttendance);
+router.put('/:id', requireTeacherOrAdmin, validate({ body: updateAttendanceSchema }), updateAttendance);
 
 export default router;

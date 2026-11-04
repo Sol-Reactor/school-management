@@ -1,23 +1,20 @@
 import express from 'express';
 import {
-  getTeachers,
   getTeacherById,
   getTeacherClasses,
-  getTeacherStudents
+  getTeachers,
+  getTeacherStudents,
 } from '../controllers/teachersController.js';
-import {
-  authenticate,
-  requireAdmin,
-  requireTeacher,
-  authorize
-} from '../middleware/auth.js';
+import { authenticate, requireAdmin, requireTeacherOrAdmin } from '../middleware/auth.js';
 
 const router = express.Router();
 
-router.get('/', authenticate, requireAdmin, getTeachers);
-// Teachers can view their own profile, admins can view any
-router.get('/:id', authenticate, authorize('TEACHER', 'ADMIN'), getTeacherById);
-router.get('/:id/classes', authenticate, requireTeacher, getTeacherClasses);
-router.get('/:id/students', authenticate, requireTeacher, getTeacherStudents);
+router.use(authenticate);
+
+router.get('/', requireAdmin, getTeachers);
+// The controller restricts these to the teacher themself or an admin.
+router.get('/:id', requireTeacherOrAdmin, getTeacherById);
+router.get('/:id/classes', requireTeacherOrAdmin, getTeacherClasses);
+router.get('/:id/students', requireTeacherOrAdmin, getTeacherStudents);
 
 export default router;

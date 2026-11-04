@@ -1,295 +1,156 @@
-import { PrismaClient } from "@prisma/client";
+import prisma from '../lib/prisma.js';
+import { badRequest, forbidden, notFound } from '../lib/errors.js';
+import {
+  assertCanManageClass,
+  assertCanManageExam,
+  assertCanViewClass,
+  canManageClass,
+  classScope,
+  studentScope,
+} from '../lib/access.js';
 
-const prisma = new PrismaClient();
+const examInclude = {
+  class: { select: { id: true, name: true, level: true } },
+  subject: { select: { id: true, name: true, code: true } },
+  teacher: { include: { user: { select: { fullName: true } } } },
+};
 
-// Get all exams
+/** Exams visible to the user: by class membership, plus exams a teacher set themselves. */
+const examScope = (user) => {
+  if (user.role === 'ADMIN') return {};
+  if (user.role === 'TEACHER') {
+    return { OR: [{ teacherId: user.teacher.id }, { class: { teacherId: user.teacher.id } }] };
+  }
+  return { class: classScope(user) };
+};
+
+// GET /api/exams
 export const getExams = async (req, res) => {
-  try {
-    const { classId, teacherId, page = 1, limit = 10 } = req.query;
-    
-    const where = {};
-    if (classId) where.classId = classId;
-    if (teacherId) where.teacherId = teacherId;
+  const { classId, teacherId, page, limit } = req.query;
+  const where = {
+    AND: [examScope(req.user), classId ? { classId } : {}, teacherId ? { teacherId } : {}],
+  };
 
-    const exams = await prisma.exam.findMany({
+  const [exams, total] = await Promise.all([
+    prisma.exam.findMany({
       where,
-      include: {
-        class: {
-          select: {
-            name: true,
-            level: true
-          }
-        },
-        subject: {
-          select: {
-            name: true,
-            code: true
-          }
-        },
-        teacher: {
-          include: {
-            user: {
-              select: {
-                fullName: true
-              }
-            }
-          }
-        },
-        _count: {
-          select: {
-            grades: true
-          }
-        }
-      },
+      include: { ...examInclude, _count: { select: { grades: true } } },
       skip: (page - 1) * limit,
-      take: parseInt(limit),
-      orderBy: {
-        date: 'desc'
-      }
-    });
+      take: limit,
+      orderBy: { date: 'desc' },
+    }),
+    prisma.exam.count({ where }),
+  ]);
 
-    const total = await prisma.exam.count({ where });
-
-    res.json({
-      exams,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total,
-        pages: Math.ceil(total / limit)
-      }
-    });
-  } catch (error) {
-    console.error('Error fetching exams:', error);
-    res.status(500).json({ message: 'Server error fetching exams' });
-  }
+  res.json({ exams, pagination: { page, limit, total, pages: Math.ceil(total / limit) } });
 };
 
-// Get exam by ID
+// GET /api/exams/:id — grades are limited to what the viewer may see.
 export const getExamById = async (req, res) => {
-  try {
-    const { id } = req.params;
+  const exam = await prisma.exam.findFirst({
+    where: { id: req.params.id, ...examScope(req.user) },
+    select: { id: true, classId: true, teacherId: true },
+  });
+  if (!exam) throw notFound('Exam not found');
 
-    const exam = await prisma.exam.findUnique({
-      where: { id },
-      include: {
-        class: {
-          select: {
-            id: true,
-            name: true,
-            level: true
-          }
-        },
-        subject: {
-          select: {
-            id: true,
-            name: true,
-            code: true
-          }
-        },
-        teacher: {
-          include: {
-            user: {
-              select: {
-                fullName: true,
-                email: true
-              }
-            }
-          }
-        },
-        grades: {
-          include: {
-            student: {
-              include: {
-                user: {
-                  select: {
-                    fullName: true
-                  }
-                }
-              }
-            }
-          },
-          orderBy: {
-            student: {
-              user: {
-                fullName: 'asc'
-              }
-            }
-          }
-        }
-      }
-    });
+  const manager =
+    req.user.role === 'ADMIN' ||
+    exam.teacherId === req.user.teacher?.id ||
+    (await canManageClass(req.user, exam.classId));
 
-    if (!exam) {
-      return res.status(404).json({ message: 'Exam not found' });
-    }
+  const full = await prisma.exam.findUnique({
+    where: { id: exam.id },
+    include: {
+      ...examInclude,
+      teacher: { include: { user: { select: { fullName: true, email: true } } } },
+      grades: {
+        where: manager ? {} : { student: studentScope(req.user) },
+        include: { student: { include: { user: { select: { fullName: true } } } } },
+        orderBy: { student: { user: { fullName: 'asc' } } },
+      },
+    },
+  });
 
-    res.json({ exam });
-  } catch (error) {
-    console.error('Error fetching exam:', error);
-    res.status(500).json({ message: 'Server error fetching exam' });
-  }
+  res.json({ exam: full });
 };
 
-// Create exam
+const resolveTeacherId = async (user, classId, requested) => {
+  if (user.role === 'TEACHER') {
+    if (requested && requested !== user.teacher.id) {
+      throw forbidden('Teachers can only create exams as themselves');
+    }
+    return user.teacher.id;
+  }
+  if (requested) return requested;
+  const cls = await prisma.class.findUnique({ where: { id: classId }, select: { teacherId: true } });
+  if (!cls?.teacherId) {
+    throw badRequest('Choose a teacher for this exam', [
+      { path: 'teacherId', message: 'This class has no teacher, so pick one' },
+    ]);
+  }
+  return cls.teacherId;
+};
+
+// POST /api/exams (class teacher/admin)
 export const createExam = async (req, res) => {
-  try {
-    const { name, date, classId, subjectId, teacherId } = req.body;
+  const { name, date, classId, subjectId, teacherId } = req.body;
+  await assertCanManageClass(req.user, classId);
 
-    if (!name || !date || !classId || !subjectId || !teacherId) {
-      return res.status(400).json({ 
-        message: 'Name, date, class ID, subject ID, and teacher ID are required' 
-      });
-    }
+  const exam = await prisma.exam.create({
+    data: {
+      name,
+      date,
+      classId,
+      subjectId,
+      teacherId: await resolveTeacherId(req.user, classId, teacherId),
+    },
+    include: examInclude,
+  });
 
-    const exam = await prisma.exam.create({
-      data: {
-        name,
-        date: new Date(date),
-        classId,
-        subjectId,
-        teacherId
-      },
-      include: {
-        class: {
-          select: {
-            name: true
-          }
-        },
-        subject: {
-          select: {
-            name: true
-          }
-        },
-        teacher: {
-          include: {
-            user: {
-              select: {
-                fullName: true
-              }
-            }
-          }
-        }
-      }
-    });
-
-    res.status(201).json({
-      message: 'Exam created successfully',
-      exam
-    });
-  } catch (error) {
-    console.error('Error creating exam:', error);
-    
-    if (error.code === 'P2003') {
-      return res.status(400).json({ message: 'Invalid class, subject, or teacher ID' });
-    }
-    
-    res.status(500).json({ message: 'Server error creating exam' });
-  }
+  res.status(201).json({ message: 'Exam created', exam });
 };
 
-// Update exam
+// PUT /api/exams/:id
 export const updateExam = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { name, date, classId, subjectId, teacherId } = req.body;
+  await assertCanManageExam(req.user, req.params.id);
+  const { classId, teacherId, ...rest } = req.body;
 
-    const exam = await prisma.exam.update({
-      where: { id },
-      data: {
-        ...(name && { name }),
-        ...(date && { date: new Date(date) }),
-        ...(classId && { classId }),
-        ...(subjectId && { subjectId }),
-        ...(teacherId && { teacherId })
-      },
-      include: {
-        class: {
-          select: {
-            name: true
-          }
-        },
-        subject: {
-          select: {
-            name: true
-          }
-        }
-      }
-    });
+  if (classId) await assertCanManageClass(req.user, classId);
+  if (teacherId && req.user.role !== 'ADMIN') throw forbidden('Only an admin can reassign an exam');
 
-    res.json({
-      message: 'Exam updated successfully',
-      exam
-    });
-  } catch (error) {
-    console.error('Error updating exam:', error);
-    
-    if (error.code === 'P2025') {
-      return res.status(404).json({ message: 'Exam not found' });
-    }
-    
-    res.status(500).json({ message: 'Server error updating exam' });
-  }
+  const exam = await prisma.exam.update({
+    where: { id: req.params.id },
+    data: { ...rest, ...(classId && { classId }), ...(teacherId && { teacherId }) },
+    include: examInclude,
+  });
+
+  res.json({ message: 'Exam updated', exam });
 };
 
-// Delete exam
+// DELETE /api/exams/:id — removes the exam and its grades.
 export const deleteExam = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    await prisma.exam.delete({
-      where: { id }
-    });
-
-    res.json({ message: 'Exam deleted successfully' });
-  } catch (error) {
-    console.error('Error deleting exam:', error);
-    
-    if (error.code === 'P2025') {
-      return res.status(404).json({ message: 'Exam not found' });
-    }
-    
-    res.status(500).json({ message: 'Server error deleting exam' });
-  }
+  await assertCanManageExam(req.user, req.params.id);
+  await prisma.$transaction([
+    prisma.grade.deleteMany({ where: { examId: req.params.id } }),
+    prisma.exam.delete({ where: { id: req.params.id } }),
+  ]);
+  res.json({ message: 'Exam deleted' });
 };
 
-// Get class exams
+// GET /api/exams/class/:classId
 export const getClassExams = async (req, res) => {
-  try {
-    const { classId } = req.params;
+  const { classId } = req.params;
+  await assertCanViewClass(req.user, classId);
 
-    const exams = await prisma.exam.findMany({
-      where: { classId },
-      include: {
-        subject: {
-          select: {
-            name: true,
-            code: true
-          }
-        },
-        teacher: {
-          include: {
-            user: {
-              select: {
-                fullName: true
-              }
-            }
-          }
-        },
-        _count: {
-          select: {
-            grades: true
-          }
-        }
-      },
-      orderBy: {
-        date: 'asc'
-      }
-    });
+  const exams = await prisma.exam.findMany({
+    where: { classId },
+    include: {
+      subject: { select: { name: true, code: true } },
+      teacher: { include: { user: { select: { fullName: true } } } },
+      _count: { select: { grades: true } },
+    },
+    orderBy: { date: 'asc' },
+  });
 
-    res.json({ exams });
-  } catch (error) {
-    console.error('Error fetching class exams:', error);
-    res.status(500).json({ message: 'Server error fetching class exams' });
-  }
+  res.json({ exams });
 };

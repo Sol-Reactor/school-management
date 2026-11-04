@@ -1,369 +1,175 @@
-import { PrismaClient } from "@prisma/client";
+import prisma from '../lib/prisma.js';
+import { badRequest, conflict, forbidden, notFound } from '../lib/errors.js';
+import { assertCanManageExam, assertCanViewStudent, canViewStudent } from '../lib/access.js';
 
-const prisma = new PrismaClient();
+const round2 = (n) => Math.round(n * 100) / 100;
 
-// Get all grades
+const teacherExamScope = (user) =>
+  user.role === 'TEACHER'
+    ? { exam: { OR: [{ teacherId: user.teacher.id }, { class: { teacherId: user.teacher.id } }] } }
+    : {};
+
+// GET /api/grades (teacher/admin)
 export const getGrades = async (req, res) => {
-  try {
-    const { examId, studentId, subjectId, page = 1, limit = 10 } = req.query;
-    
-    const where = {};
-    if (examId) where.examId = examId;
-    if (studentId) where.studentId = studentId;
-    if (subjectId) where.subjectId = subjectId;
+  const { examId, studentId, subjectId, page, limit } = req.query;
+  const where = {
+    ...(examId && { examId }),
+    ...(studentId && { studentId }),
+    ...(subjectId && { subjectId }),
+    ...teacherExamScope(req.user),
+  };
 
-    const grades = await prisma.grade.findMany({
+  const [grades, total] = await Promise.all([
+    prisma.grade.findMany({
       where,
       include: {
-        student: {
-          include: {
-            user: {
-              select: {
-                fullName: true,
-                email: true
-              }
-            }
-          }
-        },
-        exam: {
-          select: {
-            name: true,
-            date: true
-          }
-        },
-        subject: {
-          select: {
-            name: true,
-            code: true
-          }
-        }
+        student: { include: { user: { select: { fullName: true, email: true } } } },
+        exam: { select: { id: true, name: true, date: true, classId: true } },
+        subject: { select: { name: true, code: true } },
       },
       skip: (page - 1) * limit,
-      take: parseInt(limit),
-      orderBy: {
-        exam: {
-          date: 'desc'
-        }
-      }
-    });
+      take: limit,
+      orderBy: { exam: { date: 'desc' } },
+    }),
+    prisma.grade.count({ where }),
+  ]);
 
-    const total = await prisma.grade.count({ where });
-
-    res.json({
-      grades,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total,
-        pages: Math.ceil(total / limit)
-      }
-    });
-  } catch (error) {
-    console.error('Error fetching grades:', error);
-    res.status(500).json({ message: 'Server error fetching grades' });
-  }
+  res.json({ grades, pagination: { page, limit, total, pages: Math.ceil(total / limit) } });
 };
 
-// Get grade by ID
+// GET /api/grades/:id
 export const getGradeById = async (req, res) => {
-  try {
-    const { id } = req.params;
+  const grade = await prisma.grade.findUnique({
+    where: { id: req.params.id },
+    include: {
+      student: {
+        include: {
+          user: { select: { fullName: true, email: true } },
+          class: { select: { name: true } },
+        },
+      },
+      exam: {
+        include: { class: { select: { name: true } }, subject: { select: { name: true } } },
+      },
+      subject: { select: { name: true, code: true } },
+    },
+  });
+  if (!grade) throw notFound('Grade not found');
 
-    const grade = await prisma.grade.findUnique({
-      where: { id },
-      include: {
-        student: {
-          include: {
-            user: {
-              select: {
-                fullName: true,
-                email: true
-              }
-            },
-            class: {
-              select: {
-                name: true
-              }
-            }
-          }
-        },
-        exam: {
-          include: {
-            class: {
-              select: {
-                name: true
-              }
-            },
-            subject: {
-              select: {
-                name: true
-              }
-            }
-          }
-        },
-        subject: {
-          select: {
-            name: true,
-            code: true
-          }
-        }
-      }
+  if (!(await canViewStudent(req.user, grade.studentId))) {
+    await assertCanManageExam(req.user, grade.examId).catch(() => {
+      throw forbidden();
     });
-
-    if (!grade) {
-      return res.status(404).json({ message: 'Grade not found' });
-    }
-
-    res.json({ grade });
-  } catch (error) {
-    console.error('Error fetching grade:', error);
-    res.status(500).json({ message: 'Server error fetching grade' });
   }
+
+  res.json({ grade });
 };
 
-// Create grade
+// POST /api/grades (exam teacher/admin)
 export const createGrade = async (req, res) => {
-  try {
-    const { examId, studentId, subjectId, marks } = req.body;
+  const { examId, studentId, marks } = req.body;
+  const exam = await assertCanManageExam(req.user, examId);
 
-    if (!examId || !studentId || !subjectId || marks === undefined) {
-      return res.status(400).json({ 
-        message: 'Exam ID, Student ID, Subject ID, and marks are required' 
-      });
-    }
-
-    // Check if grade already exists for this student in this exam
-    const existingGrade = await prisma.grade.findFirst({
-      where: {
-        examId,
-        studentId,
-        subjectId
-      }
-    });
-
-    if (existingGrade) {
-      return res.status(400).json({ 
-        message: 'Grade already exists for this student in this exam' 
-      });
-    }
-
-    const grade = await prisma.grade.create({
-      data: {
-        examId,
-        studentId,
-        subjectId,
-        marks: parseInt(marks)
-      },
-      include: {
-        student: {
-          include: {
-            user: {
-              select: {
-                fullName: true
-              }
-            }
-          }
-        },
-        exam: {
-          select: {
-            name: true
-          }
-        },
-        subject: {
-          select: {
-            name: true
-          }
-        }
-      }
-    });
-
-    res.status(201).json({
-      message: 'Grade created successfully',
-      grade
-    });
-  } catch (error) {
-    console.error('Error creating grade:', error);
-    
-    if (error.code === 'P2003') {
-      return res.status(400).json({ message: 'Invalid exam, student, or subject ID' });
-    }
-    
-    res.status(500).json({ message: 'Server error creating grade' });
+  if (req.body.subjectId && req.body.subjectId !== exam.subjectId) {
+    throw badRequest("Subject doesn't match the exam's subject", [
+      { path: 'subjectId', message: "Must match the exam's subject" },
+    ]);
   }
+
+  const inClass = await prisma.student.findFirst({
+    where: {
+      id: studentId,
+      OR: [{ classId: exam.classId }, { enrollments: { some: { classId: exam.classId } } }],
+    },
+    select: { id: true },
+  });
+  if (!inClass) throw badRequest("This student isn't in the exam's class");
+
+  if (await prisma.grade.findFirst({ where: { examId, studentId }, select: { id: true } })) {
+    throw conflict('A grade already exists for this student in this exam');
+  }
+
+  const grade = await prisma.grade.create({
+    data: { examId, studentId, subjectId: exam.subjectId, marks },
+    include: {
+      student: { include: { user: { select: { fullName: true } } } },
+      exam: { select: { name: true } },
+      subject: { select: { name: true } },
+    },
+  });
+
+  res.status(201).json({ message: 'Grade saved', grade });
 };
 
-// Update grade
+const loadGradeForWrite = async (user, id) => {
+  const grade = await prisma.grade.findUnique({ where: { id }, select: { examId: true } });
+  if (!grade) throw notFound('Grade not found');
+  await assertCanManageExam(user, grade.examId);
+};
+
+// PUT /api/grades/:id
 export const updateGrade = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { marks } = req.body;
-
-    if (marks === undefined) {
-      return res.status(400).json({ message: 'Marks are required' });
-    }
-
-    const grade = await prisma.grade.update({
-      where: { id },
-      data: { marks: parseInt(marks) },
-      include: {
-        student: {
-          include: {
-            user: {
-              select: {
-                fullName: true
-              }
-            }
-          }
-        },
-        exam: {
-          select: {
-            name: true
-          }
-        }
-      }
-    });
-
-    res.json({
-      message: 'Grade updated successfully',
-      grade
-    });
-  } catch (error) {
-    console.error('Error updating grade:', error);
-    
-    if (error.code === 'P2025') {
-      return res.status(404).json({ message: 'Grade not found' });
-    }
-    
-    res.status(500).json({ message: 'Server error updating grade' });
-  }
+  await loadGradeForWrite(req.user, req.params.id);
+  const grade = await prisma.grade.update({
+    where: { id: req.params.id },
+    data: { marks: req.body.marks },
+    include: {
+      student: { include: { user: { select: { fullName: true } } } },
+      exam: { select: { name: true } },
+    },
+  });
+  res.json({ message: 'Grade updated', grade });
 };
 
-// Delete grade
+// DELETE /api/grades/:id
 export const deleteGrade = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    await prisma.grade.delete({
-      where: { id }
-    });
-
-    res.json({ message: 'Grade deleted successfully' });
-  } catch (error) {
-    console.error('Error deleting grade:', error);
-    
-    if (error.code === 'P2025') {
-      return res.status(404).json({ message: 'Grade not found' });
-    }
-    
-    res.status(500).json({ message: 'Server error deleting grade' });
-  }
+  await loadGradeForWrite(req.user, req.params.id);
+  await prisma.grade.delete({ where: { id: req.params.id } });
+  res.json({ message: 'Grade deleted' });
 };
 
-// Get student grades
+// GET /api/grades/student/:studentId
 export const getStudentGrades = async (req, res) => {
-  try {
-    const { studentId } = req.params;
-    const { subjectId } = req.query;
+  const { studentId } = req.params;
+  await assertCanViewStudent(req.user, studentId);
 
-    const where = { studentId };
-    if (subjectId) where.subjectId = subjectId;
-
-    const grades = await prisma.grade.findMany({
-      where,
-      include: {
-        exam: {
-          include: {
-            subject: {
-              select: {
-                name: true
-              }
-            },
-            class: {
-              select: {
-                name: true
-              }
-            }
-          }
-        },
-        subject: {
-          select: {
-            name: true,
-            code: true
-          }
-        }
+  const { subjectId } = req.query;
+  const grades = await prisma.grade.findMany({
+    where: { studentId, ...(typeof subjectId === 'string' && subjectId && { subjectId }) },
+    include: {
+      exam: {
+        include: { subject: { select: { name: true } }, class: { select: { name: true } } },
       },
-      orderBy: {
-        exam: {
-          date: 'desc'
-        }
-      }
-    });
+      subject: { select: { name: true, code: true } },
+    },
+    orderBy: { exam: { date: 'desc' } },
+  });
 
-    // Calculate average if needed
-    const average = grades.length > 0 
-      ? grades.reduce((sum, grade) => sum + grade.marks, 0) / grades.length 
-      : 0;
-
-    res.json({
-      grades,
-      average: Math.round(average * 100) / 100,
-      total: grades.length
-    });
-  } catch (error) {
-    console.error('Error fetching student grades:', error);
-    res.status(500).json({ message: 'Server error fetching student grades' });
-  }
+  const average = grades.length ? grades.reduce((s, g) => s + g.marks, 0) / grades.length : 0;
+  res.json({ grades, average: round2(average), total: grades.length });
 };
 
-// Get exam grades
+// GET /api/grades/exam/:examId (exam teacher/admin)
 export const getExamGrades = async (req, res) => {
-  try {
-    const { examId } = req.params;
+  const { examId } = req.params;
+  await assertCanManageExam(req.user, examId);
 
-    const grades = await prisma.grade.findMany({
-      where: { examId },
-      include: {
-        student: {
-          include: {
-            user: {
-              select: {
-                fullName: true,
-                email: true
-              }
-            }
-          }
-        },
-        subject: {
-          select: {
-            name: true
-          }
-        }
-      },
-      orderBy: {
-        student: {
-          user: {
-            fullName: 'asc'
-          }
-        }
-      }
-    });
+  const grades = await prisma.grade.findMany({
+    where: { examId },
+    include: {
+      student: { include: { user: { select: { fullName: true, email: true } } } },
+      subject: { select: { name: true } },
+    },
+    orderBy: { student: { user: { fullName: 'asc' } } },
+  });
 
-    // Calculate exam statistics
-    const statistics = {
-      totalStudents: grades.length,
-      average: grades.length > 0 
-        ? grades.reduce((sum, grade) => sum + grade.marks, 0) / grades.length 
-        : 0,
-      highest: grades.length > 0 ? Math.max(...grades.map(g => g.marks)) : 0,
-      lowest: grades.length > 0 ? Math.min(...grades.map(g => g.marks)) : 0
-    };
+  const marks = grades.map((g) => g.marks);
+  const statistics = {
+    totalStudents: grades.length,
+    average: marks.length ? round2(marks.reduce((a, b) => a + b, 0) / marks.length) : 0,
+    highest: marks.length ? Math.max(...marks) : 0,
+    lowest: marks.length ? Math.min(...marks) : 0,
+  };
 
-    res.json({
-      grades,
-      statistics
-    });
-  } catch (error) {
-    console.error('Error fetching exam grades:', error);
-    res.status(500).json({ message: 'Server error fetching exam grades' });
-  }
+  res.json({ grades, statistics });
 };

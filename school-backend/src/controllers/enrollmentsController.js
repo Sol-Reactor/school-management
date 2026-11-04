@@ -1,315 +1,111 @@
-import { PrismaClient } from "@prisma/client";
-import { createNotification, notifyAdmins } from './notificationController.js';
+import prisma from '../lib/prisma.js';
+import { badRequest, conflict, notFound } from '../lib/errors.js';
+import { assertCanManageClass } from '../lib/access.js';
+import { createNotification, notifyAdmins, notifySafely } from './notificationController.js';
 
-const prisma = new PrismaClient();
+const enrollmentInclude = {
+  student: { include: { user: { select: { id: true, fullName: true, email: true } } } },
+  class: { select: { name: true, level: true } },
+};
 
-// Get all enrollments
+// GET /api/enrollments (teacher/admin) — teachers see enrollments for their classes only.
 export const getEnrollments = async (req, res) => {
-  try {
-    const { studentId, classId } = req.query;
+  const { studentId, classId } = req.query;
+  const where = {
+    ...(studentId && { studentId }),
+    ...(classId && { classId }),
+    ...(req.user.role === 'TEACHER' && { class: { teacherId: req.user.teacher.id } }),
+  };
 
-    const where = {};
-    if (studentId) where.studentId = studentId;
-    if (classId) where.classId = classId;
+  const enrollments = await prisma.enrollment.findMany({
+    where,
+    include: enrollmentInclude,
+    orderBy: { createdAt: 'desc' },
+  });
 
-    const enrollments = await prisma.enrollment.findMany({
-      where,
-      include: {
-        student: {
-          include: {
-            user: {
-              select: {
-                fullName: true,
-                email: true
-              }
-            }
-          }
-        },
-        class: {
-          select: {
-            name: true,
-            level: true
-          }
-        }
-      },
-      orderBy: {
-        createdAt: 'desc'
-      }
-    });
-
-    res.json({ enrollments });
-  } catch (error) {
-    console.error('Error fetching enrollments:', error);
-    res.status(500).json({ message: 'Server error fetching enrollments' });
-  }
+  res.json({ enrollments });
 };
 
-// Create enrollment
+/** Enrols a student, sets their current class and notifies the people involved. */
+const enroll = async (studentId, classId) => {
+  const classInfo = await prisma.class.findUnique({ where: { id: classId }, select: { id: true } });
+  if (!classInfo) throw notFound('Class not found');
+
+  if (await prisma.enrollment.findFirst({ where: { studentId, classId }, select: { id: true } })) {
+    throw conflict('This student is already enrolled in that class');
+  }
+
+  const [enrollment] = await prisma.$transaction([
+    prisma.enrollment.create({ data: { studentId, classId }, include: enrollmentInclude }),
+    prisma.student.update({ where: { id: studentId }, data: { classId } }),
+  ]);
+
+  const { student } = enrollment;
+  const label = `${enrollment.class.name} (${enrollment.class.level})`;
+  const parent = student.parentId
+    ? await prisma.parent.findUnique({ where: { id: student.parentId }, select: { userId: true } })
+    : null;
+
+  notifySafely(
+    createNotification(student.user.id, 'Assigned to class', `You have been assigned to ${label}.`, 'CLASS_ASSIGNED'),
+    notifyAdmins('New enrollment', `${student.user.fullName} was enrolled in ${enrollment.class.name}.`, 'ENROLLMENT'),
+    parent &&
+      createNotification(
+        parent.userId,
+        'Child assigned to class',
+        `${student.user.fullName} has been assigned to ${label}.`,
+        'CLASS_ASSIGNED'
+      )
+  );
+
+  return enrollment;
+};
+
+// POST /api/enrollments (admin)
 export const createEnrollment = async (req, res) => {
-  try {
-    const { studentId, classId } = req.body;
+  const { studentId, classId } = req.body;
+  const student = await prisma.student.findUnique({ where: { id: studentId }, select: { id: true } });
+  if (!student) throw notFound('Student not found');
 
-    if (!studentId || !classId) {
-      return res.status(400).json({ message: 'Student ID and Class ID are required' });
-    }
-
-    // Check if enrollment already exists
-    const existingEnrollment = await prisma.enrollment.findFirst({
-      where: {
-        studentId,
-        classId
-      }
-    });
-
-    if (existingEnrollment) {
-      return res.status(400).json({ message: 'Student is already enrolled in this class' });
-    }
-
-    const enrollment = await prisma.enrollment.create({
-      data: {
-        studentId,
-        classId
-      },
-      include: {
-        student: {
-          include: {
-            user: {
-              select: {
-                fullName: true,
-                email: true
-              }
-            }
-          }
-        },
-        class: {
-          select: {
-            name: true,
-            level: true
-          }
-        }
-      }
-    });
-
-    // Update student's classId
-    await prisma.student.update({
-      where: { id: studentId },
-      data: { classId }
-    });
-
-    // Notify student about class assignment
-    try {
-      await createNotification(
-        enrollment.student.user.id,
-        'Assigned to Class',
-        `You have been assigned to ${enrollment.class.name} (${enrollment.class.level}).`,
-        'CLASS_ASSIGNED'
-      );
-
-      // Notify admins about enrollment
-      await notifyAdmins(
-        'New Student Enrollment',
-        `${enrollment.student.user.fullName} has been enrolled in ${enrollment.class.name}.`,
-        'ENROLLMENT'
-      );
-    } catch (notifError) {
-      console.error('Error creating notifications:', notifError);
-    }
-
-    res.status(201).json({
-      message: 'Enrollment created successfully',
-      enrollment
-    });
-  } catch (error) {
-    console.error('Error creating enrollment:', error);
-
-    if (error.code === 'P2002') {
-      return res.status(400).json({ message: 'Enrollment already exists' });
-    }
-
-    if (error.code === 'P2003') {
-      return res.status(400).json({ message: 'Invalid student or class ID' });
-    }
-
-    res.status(500).json({ message: 'Server error creating enrollment' });
-  }
+  const enrollment = await enroll(studentId, classId);
+  res.status(201).json({ message: 'Enrollment created', enrollment });
 };
 
-// Delete enrollment
-export const deleteEnrollment = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const enrollment = await prisma.enrollment.delete({
-      where: { id },
-      include: {
-        student: {
-          select: {
-            id: true
-          }
-        }
-      }
-    });
-
-    // Remove classId from student
-    await prisma.student.update({
-      where: { id: enrollment.student.id },
-      data: { classId: null }
-    });
-
-    res.json({ message: 'Enrollment deleted successfully' });
-  } catch (error) {
-    console.error('Error deleting enrollment:', error);
-
-    if (error.code === 'P2025') {
-      return res.status(404).json({ message: 'Enrollment not found' });
-    }
-
-    res.status(500).json({ message: 'Server error deleting enrollment' });
-  }
-};
-
-
-// Assign student to class by email
+// POST /api/enrollments/assign (class teacher/admin) — enrol by student email.
 export const assignStudentToClass = async (req, res) => {
-  try {
-    const { studentEmail, classId } = req.body;
+  const { studentEmail, classId } = req.body;
+  await assertCanManageClass(req.user, classId);
 
-    if (!studentEmail || !classId) {
-      return res.status(400).json({ message: 'Student email and Class ID are required' });
-    }
-
-    // Find student by email
-    const studentUser = await prisma.user.findFirst({
-      where: {
-        email: studentEmail.trim(),
-        role: 'STUDENT'
-      },
-      include: {
-        student: true
-      }
-    });
-
-    if (!studentUser || !studentUser.student) {
-      return res.status(400).json({ message: 'Student not found with the provided email' });
-    }
-
-    const studentId = studentUser.student.id;
-
-    // Check if enrollment already exists
-    const existingEnrollment = await prisma.enrollment.findFirst({
-      where: {
-        studentId,
-        classId
-      }
-    });
-
-    if (existingEnrollment) {
-      return res.status(400).json({ message: 'Student is already enrolled in this class' });
-    }
-
-    // Get class info
-    const classInfo = await prisma.class.findUnique({
-      where: { id: classId },
-      select: {
-        name: true,
-        level: true
-      }
-    });
-
-    if (!classInfo) {
-      return res.status(400).json({ message: 'Class not found' });
-    }
-
-    // Create enrollment
-    const enrollment = await prisma.enrollment.create({
-      data: {
-        studentId,
-        classId
-      },
-      include: {
-        student: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                fullName: true,
-                email: true
-              }
-            }
-          }
-        },
-        class: {
-          select: {
-            name: true,
-            level: true
-          }
-        }
-      }
-    });
-
-    // Update student's classId
-    await prisma.student.update({
-      where: { id: studentId },
-      data: { classId }
-    });
-
-    // Notify student about class assignment
-    try {
-      await createNotification(
-        enrollment.student.user.id,
-        'Assigned to Class',
-        `You have been assigned to ${enrollment.class.name} (${enrollment.class.level}).`,
-        'CLASS_ASSIGNED'
-      );
-
-      // Notify admins about enrollment
-      await notifyAdmins(
-        'New Student Enrollment',
-        `${enrollment.student.user.fullName} has been enrolled in ${enrollment.class.name}.`,
-        'ENROLLMENT'
-      );
-
-      // Notify parent if exists
-      if (enrollment.student.parentId) {
-        const parent = await prisma.parent.findUnique({
-          where: { id: enrollment.student.parentId },
-          include: {
-            user: {
-              select: {
-                id: true
-              }
-            }
-          }
-        });
-
-        if (parent) {
-          await createNotification(
-            parent.user.id,
-            'Child Assigned to Class',
-            `${enrollment.student.user.fullName} has been assigned to ${enrollment.class.name} (${enrollment.class.level}).`,
-            'CLASS_ASSIGNED'
-          );
-        }
-      }
-    } catch (notifError) {
-      console.error('Error creating notifications:', notifError);
-    }
-
-    res.status(201).json({
-      message: 'Student assigned to class successfully',
-      enrollment
-    });
-  } catch (error) {
-    console.error('Error assigning student to class:', error);
-
-    if (error.code === 'P2002') {
-      return res.status(400).json({ message: 'Enrollment already exists' });
-    }
-
-    if (error.code === 'P2003') {
-      return res.status(400).json({ message: 'Invalid student or class ID' });
-    }
-
-    res.status(500).json({ message: 'Server error assigning student to class' });
+  const studentUser = await prisma.user.findFirst({
+    where: { email: studentEmail, role: 'STUDENT' },
+    select: { student: { select: { id: true } } },
+  });
+  if (!studentUser?.student) {
+    throw badRequest('No student found with that email', [
+      { path: 'studentEmail', message: 'No student found with this email' },
+    ]);
   }
+
+  const enrollment = await enroll(studentUser.student.id, classId);
+  res.status(201).json({ message: 'Student assigned to class', enrollment });
+};
+
+// DELETE /api/enrollments/:id (admin)
+export const deleteEnrollment = async (req, res) => {
+  const enrollment = await prisma.enrollment.findUnique({
+    where: { id: req.params.id },
+    select: { id: true, studentId: true, classId: true },
+  });
+  if (!enrollment) throw notFound('Enrollment not found');
+
+  await prisma.$transaction([
+    prisma.enrollment.delete({ where: { id: enrollment.id } }),
+    // Only clear the student's current class if it is the one being removed.
+    prisma.student.updateMany({
+      where: { id: enrollment.studentId, classId: enrollment.classId },
+      data: { classId: null },
+    }),
+  ]);
+
+  res.json({ message: 'Enrollment deleted' });
 };

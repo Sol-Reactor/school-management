@@ -1,315 +1,154 @@
-import { PrismaClient } from "@prisma/client";
+import prisma from '../lib/prisma.js';
+import { badRequest, conflict, forbidden, notFound } from '../lib/errors.js';
+import { assertCanManageClass, assertCanViewStudent, canManageClass, canViewStudent } from '../lib/access.js';
 
-const prisma = new PrismaClient();
+/** Attendance is per calendar day: normalise to 00:00 UTC. */
+const startOfDay = (d) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+const dayRange = (d) => {
+  const start = startOfDay(d);
+  return { gte: start, lt: new Date(start.getTime() + 864e5) };
+};
 
-// Get all attendance records
+const summarise = (records) => {
+  const summary = { PRESENT: 0, ABSENT: 0, LATE: 0, EXCUSED: 0, TOTAL: records.length };
+  for (const r of records) summary[r.status] += 1;
+  return summary;
+};
+
+// GET /api/attendance (teacher/admin)
 export const getAttendance = async (req, res) => {
-  try {
-    const { classId, studentId, date, page = 1, limit = 10 } = req.query;
-    
-    const where = {};
-    if (classId) where.classId = classId;
-    if (studentId) where.studentId = studentId;
-    if (date) {
-      const startDate = new Date(date);
-      const endDate = new Date(date);
-      endDate.setDate(endDate.getDate() + 1);
-      where.date = {
-        gte: startDate,
-        lt: endDate
-      };
-    }
+  const { classId, studentId, date, page, limit } = req.query;
+  const where = {
+    ...(classId && { classId }),
+    ...(studentId && { studentId }),
+    ...(date && { date: dayRange(date) }),
+    ...(req.user.role === 'TEACHER' && { class: { teacherId: req.user.teacher.id } }),
+  };
 
-    const attendance = await prisma.attendance.findMany({
+  const [attendance, total] = await Promise.all([
+    prisma.attendance.findMany({
       where,
       include: {
-        student: {
-          include: {
-            user: {
-              select: {
-                fullName: true,
-                email: true
-              }
-            }
-          }
-        },
-        class: {
-          select: {
-            name: true,
-            level: true
-          }
-        }
+        student: { include: { user: { select: { fullName: true, email: true } } } },
+        class: { select: { name: true, level: true } },
       },
       skip: (page - 1) * limit,
-      take: parseInt(limit),
-      orderBy: {
-        date: 'desc'
-      }
-    });
+      take: limit,
+      orderBy: { date: 'desc' },
+    }),
+    prisma.attendance.count({ where }),
+  ]);
 
-    const total = await prisma.attendance.count({ where });
-
-    res.json({
-      attendance,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total,
-        pages: Math.ceil(total / limit)
-      }
-    });
-  } catch (error) {
-    console.error('Error fetching attendance:', error);
-    res.status(500).json({ message: 'Server error fetching attendance' });
-  }
+  res.json({ attendance, pagination: { page, limit, total, pages: Math.ceil(total / limit) } });
 };
 
-// Get attendance by ID
+// GET /api/attendance/:id
 export const getAttendanceById = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const attendance = await prisma.attendance.findUnique({
-      where: { id },
-      include: {
-        student: {
-          include: {
-            user: {
-              select: {
-                fullName: true,
-                email: true
-              }
-            },
-            class: {
-              select: {
-                name: true
-              }
-            }
-          }
+  const attendance = await prisma.attendance.findUnique({
+    where: { id: req.params.id },
+    include: {
+      student: {
+        include: {
+          user: { select: { fullName: true, email: true } },
+          class: { select: { name: true } },
         },
-        class: {
-          select: {
-            name: true,
-            level: true
-          }
-        }
-      }
-    });
+      },
+      class: { select: { name: true, level: true } },
+    },
+  });
+  if (!attendance) throw notFound('Attendance record not found');
 
-    if (!attendance) {
-      return res.status(404).json({ message: 'Attendance record not found' });
-    }
+  const allowed =
+    (await canViewStudent(req.user, attendance.studentId)) ||
+    (await canManageClass(req.user, attendance.classId));
+  if (!allowed) throw forbidden();
 
-    res.json({ attendance });
-  } catch (error) {
-    console.error('Error fetching attendance record:', error);
-    res.status(500).json({ message: 'Server error fetching attendance record' });
-  }
+  res.json({ attendance });
 };
 
-// Mark attendance
+// POST /api/attendance (class teacher/admin)
 export const markAttendance = async (req, res) => {
-  try {
-    const { studentId, classId, date, status } = req.body;
+  const { studentId, classId, status } = req.body;
+  const date = startOfDay(req.body.date);
+  await assertCanManageClass(req.user, classId);
 
-    if (!studentId || !classId || !date || !status) {
-      return res.status(400).json({ 
-        message: 'Student ID, Class ID, date, and status are required' 
-      });
-    }
+  const inClass = await prisma.student.findFirst({
+    where: { id: studentId, OR: [{ classId }, { enrollments: { some: { classId } } }] },
+    select: { id: true },
+  });
+  if (!inClass) throw badRequest('This student is not in that class');
 
-    // Check if attendance already exists for this student on this date
-    const existingAttendance = await prisma.attendance.findFirst({
-      where: {
-        studentId,
-        date: new Date(date)
-      }
-    });
+  const existing = await prisma.attendance.findFirst({
+    where: { studentId, classId, date: dayRange(date) },
+    select: { id: true },
+  });
+  if (existing) throw conflict('Attendance is already marked for this student on this date');
 
-    if (existingAttendance) {
-      return res.status(400).json({ 
-        message: 'Attendance already marked for this student on this date' 
-      });
-    }
+  const attendance = await prisma.attendance.create({
+    data: { studentId, classId, date, status },
+    include: {
+      student: { include: { user: { select: { fullName: true } } } },
+      class: { select: { name: true } },
+    },
+  });
 
-    const attendance = await prisma.attendance.create({
-      data: {
-        studentId,
-        classId,
-        date: new Date(date),
-        status
-      },
-      include: {
-        student: {
-          include: {
-            user: {
-              select: {
-                fullName: true
-              }
-            }
-          }
-        },
-        class: {
-          select: {
-            name: true
-          }
-        }
-      }
-    });
-
-    res.status(201).json({
-      message: 'Attendance marked successfully',
-      attendance
-    });
-  } catch (error) {
-    console.error('Error marking attendance:', error);
-    
-    if (error.code === 'P2003') {
-      return res.status(400).json({ message: 'Invalid student or class ID' });
-    }
-    
-    res.status(500).json({ message: 'Server error marking attendance' });
-  }
+  res.status(201).json({ message: 'Attendance marked', attendance });
 };
 
-// Update attendance
+// PUT /api/attendance/:id (class teacher/admin)
 export const updateAttendance = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { status } = req.body;
+  const record = await prisma.attendance.findUnique({
+    where: { id: req.params.id },
+    select: { classId: true },
+  });
+  if (!record) throw notFound('Attendance record not found');
+  await assertCanManageClass(req.user, record.classId);
 
-    if (!status) {
-      return res.status(400).json({ message: 'Status is required' });
-    }
+  const attendance = await prisma.attendance.update({
+    where: { id: req.params.id },
+    data: { status: req.body.status },
+    include: {
+      student: { include: { user: { select: { fullName: true } } } },
+      class: { select: { name: true } },
+    },
+  });
 
-    const attendance = await prisma.attendance.update({
-      where: { id },
-      data: { status },
-      include: {
-        student: {
-          include: {
-            user: {
-              select: {
-                fullName: true
-              }
-            }
-          }
-        },
-        class: {
-          select: {
-            name: true
-          }
-        }
-      }
-    });
-
-    res.json({
-      message: 'Attendance updated successfully',
-      attendance
-    });
-  } catch (error) {
-    console.error('Error updating attendance:', error);
-    
-    if (error.code === 'P2025') {
-      return res.status(404).json({ message: 'Attendance record not found' });
-    }
-    
-    res.status(500).json({ message: 'Server error updating attendance' });
-  }
+  res.json({ message: 'Attendance updated', attendance });
 };
 
-// Get student attendance
+// GET /api/attendance/student/:studentId
 export const getStudentAttendance = async (req, res) => {
-  try {
-    const { studentId } = req.params;
-    const { startDate, endDate } = req.query;
+  const { studentId } = req.params;
+  await assertCanViewStudent(req.user, studentId);
 
-    const where = { studentId };
-    
-    if (startDate && endDate) {
-      where.date = {
-        gte: new Date(startDate),
-        lte: new Date(endDate)
-      };
-    }
+  const { startDate, endDate } = req.query;
+  const where = {
+    studentId,
+    ...((startDate || endDate) && {
+      date: { ...(startDate && { gte: startOfDay(startDate) }), ...(endDate && { lte: endDate }) },
+    }),
+  };
 
-    const attendance = await prisma.attendance.findMany({
-      where,
-      include: {
-        class: {
-          select: {
-            name: true
-          }
-        }
-      },
-      orderBy: {
-        date: 'desc'
-      }
-    });
+  const attendance = await prisma.attendance.findMany({
+    where,
+    include: { class: { select: { name: true } } },
+    orderBy: { date: 'desc' },
+  });
 
-    // Calculate attendance summary
-    const summary = {
-      PRESENT: attendance.filter(a => a.status === 'PRESENT').length,
-      ABSENT: attendance.filter(a => a.status === 'ABSENT').length,
-      LATE: attendance.filter(a => a.status === 'LATE').length,
-      EXCUSED: attendance.filter(a => a.status === 'EXCUSED').length,
-      TOTAL: attendance.length
-    };
-
-    res.json({
-      attendance,
-      summary
-    });
-  } catch (error) {
-    console.error('Error fetching student attendance:', error);
-    res.status(500).json({ message: 'Server error fetching student attendance' });
-  }
+  res.json({ attendance, summary: summarise(attendance) });
 };
 
-// Get class attendance
+// GET /api/attendance/class/:classId (class teacher/admin)
 export const getClassAttendance = async (req, res) => {
-  try {
-    const { classId } = req.params;
-    const { date } = req.query;
+  const { classId } = req.params;
+  await assertCanManageClass(req.user, classId);
 
-    const where = { classId };
-    
-    if (date) {
-      const startDate = new Date(date);
-      const endDate = new Date(date);
-      endDate.setDate(endDate.getDate() + 1);
-      where.date = {
-        gte: startDate,
-        lt: endDate
-      };
-    }
+  const { date } = req.query;
+  const attendance = await prisma.attendance.findMany({
+    where: { classId, ...(date && { date: dayRange(date) }) },
+    include: { student: { include: { user: { select: { fullName: true, email: true } } } } },
+    orderBy: { student: { user: { fullName: 'asc' } } },
+  });
 
-    const attendance = await prisma.attendance.findMany({
-      where,
-      include: {
-        student: {
-          include: {
-            user: {
-              select: {
-                fullName: true,
-                email: true
-              }
-            }
-          }
-        }
-      },
-      orderBy: {
-        student: {
-          user: {
-            fullName: 'asc'
-          }
-        }
-      }
-    });
-
-    res.json({ attendance });
-  } catch (error) {
-    console.error('Error fetching class attendance:', error);
-    res.status(500).json({ message: 'Server error fetching class attendance' });
-  }
+  res.json({ attendance });
 };

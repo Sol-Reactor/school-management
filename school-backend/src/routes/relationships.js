@@ -1,44 +1,22 @@
 import express from 'express';
 import {
+  getParentStudents,
+  getStudentParents,
   linkStudentToParent,
   unlinkStudentFromParent,
-  getStudentParents,
-  getParentStudents
 } from '../controllers/relationshipsController.js';
-import {
-  authenticate,
-  requireOwnership,
-  authorize
-} from '../middleware/auth.js';
+import { authenticate } from '../middleware/auth.js';
+import { validate } from '../middleware/validate.js';
+import { linkParentSchema } from '../validation/schemas.js';
 
 const router = express.Router();
 
-// Student can link themselves to a parent
-router.post('/students/:studentId/parents', 
-  authenticate, 
-  requireOwnership('student'), 
-  linkStudentToParent
-);
+router.use(authenticate);
 
-// Student/Parent can unlink relationship
-router.delete('/students/:studentId/parents/:parentId', 
-  authenticate, 
-  authorize('STUDENT', 'PARENT', 'ADMIN'), 
-  unlinkStudentFromParent
-);
-
-// Get student's parents
-router.get('/students/:studentId/parents', 
-  authenticate, 
-  requireOwnership('student'), 
-  getStudentParents
-);
-
-// Get parent's students
-router.get('/parents/:parentId/students', 
-  authenticate, 
-  requireOwnership('parent'), 
-  getParentStudents
-);
+// Ownership is checked in the controller via lib/access.js.
+router.post('/students/:studentId/parents', validate({ body: linkParentSchema }), linkStudentToParent);
+router.delete('/students/:studentId/parents/:parentId', unlinkStudentFromParent);
+router.get('/students/:studentId/parents', getStudentParents);
+router.get('/parents/:parentId/students', getParentStudents);
 
 export default router;

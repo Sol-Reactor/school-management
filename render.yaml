@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: school-backend
+    runtime: node
+    rootDir: ./school-backend
+    buildCommand: npm install && npm run build
+    # Applies pending Prisma migrations, then starts the API.
+    startCommand: npm run start:prod
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TRUST_PROXY
+        value: "2"
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: FRONTEND_URL
+        value: https://manageschool-fawn.vercel.app

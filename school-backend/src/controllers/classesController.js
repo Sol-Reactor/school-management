@@ -1,347 +1,185 @@
-import { PrismaClient } from "@prisma/client";
-import { notifyAdmins, createNotification } from './notificationController.js';
+import prisma from '../lib/prisma.js';
+import { badRequest, conflict, forbidden, notFound } from '../lib/errors.js';
+import {
+  assertCanManageClass,
+  assertCanViewClass,
+  canManageClass,
+  classScope,
+} from '../lib/access.js';
+import { createNotification, notifyAdmins, notifySafely } from './notificationController.js';
 
-const prisma = new PrismaClient();
+const teacherSummary = { include: { user: { select: { id: true, fullName: true, email: true } } } };
 
-// Get all classes
+// GET /api/classes — admins see all, teachers their own, students/parents their (children's) classes.
 export const getClasses = async (req, res) => {
-  try {
-    const { teacherId } = req.query;
+  const { teacherId } = req.query;
+  const where = {
+    AND: [classScope(req.user), req.user.role === 'ADMIN' && teacherId ? { teacherId } : {}],
+  };
 
-    const where = teacherId ? { teacherId } : {};
+  const classes = await prisma.class.findMany({
+    where,
+    include: {
+      teacher: teacherSummary,
+      _count: { select: { students: true, subjects: true } },
+    },
+    orderBy: { name: 'asc' },
+  });
 
-    const classes = await prisma.class.findMany({
-      where,
-      include: {
-        teacher: {
-          include: {
-            user: {
-              select: {
-                fullName: true,
-                email: true
-              }
-            }
-          }
-        },
-        _count: {
-          select: {
-            students: true,
-            subjects: true
-          }
-        }
-      },
-      orderBy: {
-        name: 'asc'
-      }
-    });
-
-    res.json({ classes });
-  } catch (error) {
-    console.error('Error fetching classes:', error);
-    res.status(500).json({ message: 'Server error fetching classes' });
-  }
+  res.json({ classes });
 };
 
-// Get class by ID
+// GET /api/classes/:id
 export const getClassById = async (req, res) => {
-  try {
-    const { id } = req.params;
+  const { id } = req.params;
+  await assertCanViewClass(req.user, id);
+  const manager = await canManageClass(req.user, id);
 
-    const classData = await prisma.class.findUnique({
-      where: { id },
-      include: {
-        teacher: {
-          include: {
-            user: {
-              select: {
-                fullName: true,
-                email: true
-              }
-            }
-          }
-        },
-        students: {
-          include: {
-            user: {
-              select: {
-                fullName: true,
-                email: true
-              }
+  const classData = await prisma.class.findUnique({
+    where: { id },
+    include: {
+      teacher: teacherSummary,
+      // Classmates' contact details and parents are only visible to the class teacher / admin.
+      students: manager
+        ? {
+            include: {
+              user: { select: { fullName: true, email: true } },
+              parent: { include: { user: { select: { fullName: true, email: true } } } },
             },
-            parent: {
-              include: {
-                user: {
-                  select: {
-                    fullName: true,
-                    email: true
-                  }
-                }
-              }
-            }
           }
-        },
-        subjects: {
-          select: {
-            id: true,
-            name: true,
-            code: true
-          }
-        },
-        timetable: {
-          include: {
-            subject: {
-              select: {
-                name: true
-              }
-            },
-            teacher: {
-              include: {
-                user: {
-                  select: {
-                    fullName: true
-                  }
-                }
-              }
-            }
-          },
-          orderBy: [
-            { day: 'asc' },
-            { startTime: 'asc' }
-          ]
-        }
-      }
-    });
-
-    if (!classData) {
-      return res.status(404).json({ message: 'Class not found' });
-    }
-
-    res.json({ class: classData });
-  } catch (error) {
-    console.error('Error fetching class:', error);
-    res.status(500).json({ message: 'Server error fetching class' });
-  }
-};
-
-// Create class
-export const createClass = async (req, res) => {
-  try {
-    const { name, level, teacherEmail } = req.body;
-
-    if (!name || !level) {
-      return res.status(400).json({ message: 'Name and level are required' });
-    }
-
-    let teacherId = null;
-
-    // Find teacher by email if provided
-    if (teacherEmail && teacherEmail.trim() !== '') {
-      const teacherUser = await prisma.user.findFirst({
-        where: {
-          email: teacherEmail.trim(),
-          role: 'TEACHER'
-        },
+        : { select: { id: true, user: { select: { fullName: true } } } },
+      subjects: { select: { id: true, name: true, code: true } },
+      timetable: {
         include: {
-          teacher: true
-        }
-      });
-
-      if (!teacherUser || !teacherUser.teacher) {
-        return res.status(400).json({ message: 'Teacher not found with the provided email' });
-      }
-
-      teacherId = teacherUser.teacher.id;
-    }
-
-    const classData = await prisma.class.create({
-      data: {
-        name,
-        level,
-        teacherId
+          subject: { select: { name: true } },
+          teacher: { include: { user: { select: { fullName: true } } } },
+        },
+        orderBy: [{ day: 'asc' }, { startTime: 'asc' }],
       },
-      include: {
-        teacher: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                fullName: true
-              }
-            }
-          }
-        }
-      }
-    });
+    },
+  });
 
-    // Notify admins about new class
-    try {
-      await notifyAdmins(
-        'New Class Created',
-        `${name} (${level}) has been created${classData.teacher ? ` with teacher ${classData.teacher.user.fullName}` : ''}.`,
+  if (!classData) throw notFound('Class not found');
+  res.json({ class: classData });
+};
+
+// POST /api/classes (teacher/admin)
+// Teachers always create classes for themselves; admins may assign any teacher by email.
+export const createClass = async (req, res) => {
+  const { name, level, teacherEmail } = req.body;
+  let teacherId = null;
+
+  if (req.user.role === 'TEACHER') {
+    teacherId = req.user.teacher.id;
+  } else if (teacherEmail) {
+    const teacherUser = await prisma.user.findFirst({
+      where: { email: teacherEmail, role: 'TEACHER' },
+      select: { teacher: { select: { id: true } } },
+    });
+    if (!teacherUser?.teacher) {
+      throw badRequest('No teacher found with that email', [
+        { path: 'teacherEmail', message: 'No teacher found with this email' },
+      ]);
+    }
+    teacherId = teacherUser.teacher.id;
+  }
+
+  const classData = await prisma.class.create({
+    data: { name, level, teacherId },
+    include: { teacher: teacherSummary },
+  });
+
+  notifySafely(
+    notifyAdmins(
+      'New class created',
+      `${name} (${level}) was created${classData.teacher ? ` for ${classData.teacher.user.fullName}` : ''}.`,
+      'CLASS_ASSIGNED'
+    ),
+    classData.teacher &&
+      req.user.role === 'ADMIN' &&
+      createNotification(
+        classData.teacher.user.id,
+        'Class assigned',
+        `You have been assigned to teach ${name} (${level}).`,
         'CLASS_ASSIGNED'
-      );
+      )
+  );
 
-      // Notify the assigned teacher if there is one
-      if (teacherId && classData.teacher) {
-        await createNotification(
-          classData.teacher.user.id,
-          'Class Assigned',
-          `You have been assigned to teach ${name} (${level}).`,
-          'CLASS_ASSIGNED'
-        );
-      }
-    } catch (notifError) {
-      console.error('Error creating notifications:', notifError);
-    }
-
-    res.status(201).json({
-      message: 'Class created successfully',
-      class: classData
-    });
-  } catch (error) {
-    console.error('Error creating class:', error);
-    res.status(500).json({ message: 'Server error creating class' });
-  }
+  res.status(201).json({ message: 'Class created', class: classData });
 };
 
-// Update class
+// PUT /api/classes/:id (class teacher/admin)
 export const updateClass = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { name, level, teacherId } = req.body;
+  const { id } = req.params;
+  await assertCanManageClass(req.user, id);
 
-    const classData = await prisma.class.update({
-      where: { id },
-      data: {
-        ...(name && { name }),
-        ...(level && { level }),
-        ...(teacherId && { teacherId })
-      },
-      include: {
-        teacher: {
-          include: {
-            user: {
-              select: {
-                fullName: true
-              }
-            }
-          }
-        }
-      }
-    });
-
-    res.json({
-      message: 'Class updated successfully',
-      class: classData
-    });
-  } catch (error) {
-    console.error('Error updating class:', error);
-
-    if (error.code === 'P2025') {
-      return res.status(404).json({ message: 'Class not found' });
-    }
-
-    res.status(500).json({ message: 'Server error updating class' });
+  const { teacherId, ...rest } = req.body;
+  if (teacherId !== undefined && req.user.role !== 'ADMIN') {
+    throw forbidden('Only an admin can change the class teacher');
   }
+
+  const classData = await prisma.class.update({
+    where: { id },
+    data: { ...rest, ...(teacherId !== undefined && { teacherId }) },
+    include: { teacher: teacherSummary },
+  });
+
+  res.json({ message: 'Class updated', class: classData });
 };
 
-// Delete class
+// DELETE /api/classes/:id (admin)
 export const deleteClass = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    await prisma.class.delete({
-      where: { id }
-    });
-
-    res.json({ message: 'Class deleted successfully' });
-  } catch (error) {
-    console.error('Error deleting class:', error);
-
-    if (error.code === 'P2025') {
-      return res.status(404).json({ message: 'Class not found' });
-    }
-
-    res.status(500).json({ message: 'Server error deleting class' });
+  const { id } = req.params;
+  const counts = await prisma.class.findUnique({
+    where: { id },
+    select: { _count: { select: { exams: true, attendance: true } } },
+  });
+  if (!counts) throw notFound('Class not found');
+  if (counts._count.exams > 0 || counts._count.attendance > 0) {
+    throw conflict('This class has exams or attendance records and cannot be deleted.');
   }
+
+  await prisma.$transaction([
+    prisma.student.updateMany({ where: { classId: id }, data: { classId: null } }),
+    prisma.enrollment.deleteMany({ where: { classId: id } }),
+    prisma.subject.updateMany({ where: { classId: id }, data: { classId: null } }),
+    prisma.timetable.deleteMany({ where: { classId: id } }),
+    prisma.class.delete({ where: { id } }),
+  ]);
+
+  res.json({ message: 'Class deleted' });
 };
 
-// Get class students
+// GET /api/classes/:id/students (class teacher/admin)
 export const getClassStudents = async (req, res) => {
-  try {
-    const { id } = req.params;
+  const { id } = req.params;
+  await assertCanManageClass(req.user, id);
 
-    const students = await prisma.student.findMany({
-      where: { classId: id },
-      include: {
-        user: {
-          select: {
-            fullName: true,
-            email: true
-          }
-        },
-        parent: {
-          include: {
-            user: {
-              select: {
-                fullName: true,
-                email: true
-              }
-            }
-          }
-        },
-        grades: {
-          include: {
-            subject: {
-              select: {
-                name: true
-              }
-            },
-            exam: {
-              select: {
-                name: true
-              }
-            }
-          }
-        }
+  const students = await prisma.student.findMany({
+    where: { OR: [{ classId: id }, { enrollments: { some: { classId: id } } }] },
+    include: {
+      user: { select: { fullName: true, email: true } },
+      parent: { include: { user: { select: { fullName: true, email: true } } } },
+      grades: {
+        include: { subject: { select: { name: true } }, exam: { select: { name: true } } },
       },
-      orderBy: {
-        user: {
-          fullName: 'asc'
-        }
-      }
-    });
+    },
+    orderBy: { user: { fullName: 'asc' } },
+  });
 
-    res.json({ students });
-  } catch (error) {
-    console.error('Error fetching class students:', error);
-    res.status(500).json({ message: 'Server error fetching class students' });
-  }
+  res.json({ students });
 };
 
-// Get class subjects
+// GET /api/classes/:id/subjects
 export const getClassSubjects = async (req, res) => {
-  try {
-    const { id } = req.params;
+  const { id } = req.params;
+  await assertCanViewClass(req.user, id);
 
-    const subjects = await prisma.subject.findMany({
-      where: { classId: id },
-      include: {
-        _count: {
-          select: {
-            timetable: true,
-            exams: true
-          }
-        }
-      },
-      orderBy: {
-        name: 'asc'
-      }
-    });
+  const subjects = await prisma.subject.findMany({
+    where: { classId: id },
+    include: { _count: { select: { timetable: true, exams: true } } },
+    orderBy: { name: 'asc' },
+  });
 
-    res.json({ subjects });
-  } catch (error) {
-    console.error('Error fetching class subjects:', error);
-    res.status(500).json({ message: 'Server error fetching class subjects' });
-  }
+  res.json({ subjects });
 };

@@ -1,33 +1,9 @@
-// src/controllers/dashboardController.js
-import { PrismaClient } from "@prisma/client";
-
-const prisma = new PrismaClient();
-
-// Enhanced error handling wrapper
-const handleDashboardError = (operation) => {
-  return async (req, res) => {
-    try {
-      await operation(req, res);
-    } catch (error) {
-      console.error(`Error in ${operation.name}:`, {
-        message: error.message,
-        code: error.code,
-        meta: error.meta,
-        stack: error.stack
-      });
-      
-      res.status(500).json({ 
-        message: `Server error in ${operation.name}`,
-        error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
-      });
-    }
-  };
-};
+// Role-specific dashboard data. Errors propagate to the central error handler.
+import prisma from "../lib/prisma.js";
+import { notFound, forbidden } from "../lib/errors.js";
 
 // Get admin dashboard
-export const getAdminDashboard = handleDashboardError(async (req, res) => {
-  console.log('Starting admin dashboard fetch...');
-  
+export const getAdminDashboard = async (req, res) => {
   // Get counts for all entities
   const [
     totalStudents,
@@ -101,9 +77,6 @@ export const getAdminDashboard = handleDashboardError(async (req, res) => {
       take: 10,
     }),
   ]);
-
-  console.log('Admin dashboard data fetched successfully');
-
   res.json({
     summary: {
       totalStudents,
@@ -117,19 +90,16 @@ export const getAdminDashboard = handleDashboardError(async (req, res) => {
       newEnrollments: recentEnrollments,
     },
   });
-});
+};
 
 // Get teacher dashboard
-// Get teacher dashboard - FIXED VERSION
-export const getTeacherDashboard = handleDashboardError(async (req, res) => {
+// Get teacher dashboard
+export const getTeacherDashboard = async (req, res) => {
   const teacherId = req.user.teacher?.id;
 
   if (!teacherId) {
-    return res.status(403).json({ message: "Access denied. Teacher profile not found." });
+    throw forbidden("Access denied. Teacher profile not found.");
   }
-
-  console.log('Fetching teacher dashboard for:', teacherId);
-
   const myClasses = await prisma.class.findMany({
     where: { teacherId },
     select: {
@@ -249,20 +219,16 @@ export const getTeacherDashboard = handleDashboardError(async (req, res) => {
     recentAttendance,
     timetable,
   });
-});
+};
 
 // Get student dashboard
-// Get student dashboard - FIXED VERSION
-export const getStudentDashboard = handleDashboardError(async (req, res) => {
+// Get student dashboard
+export const getStudentDashboard = async (req, res) => {
   const studentId = req.user.student?.id;
 
   if (!studentId) {
-    console.error('Access denied for user:', req.user.id, '- No student profile found.');
-    return res.status(403).json({ message: "Access denied. Student profile not found." });
+    throw forbidden("Access denied. Student profile not found.");
   }
-
-  console.log(`[Student Dashboard] Starting fetch for studentId: ${studentId}`);
-
   // First get student info to get classId
   const studentInfo = await prisma.student.findUnique({
     where: { id: studentId },
@@ -305,12 +271,8 @@ export const getStudentDashboard = handleDashboardError(async (req, res) => {
   });
 
   if (!studentInfo) {
-    console.error(`[Student Dashboard] Student record not found for studentId: ${studentId}`);
-    return res.status(404).json({ message: "Student not found" });
+    throw notFound("Student not found");
   }
-
-  console.log(`[Student Dashboard] Found studentInfo for ${studentInfo.user.fullName}. ClassId: ${studentInfo.classId}`);
-
   // Handle the case where student has no class assigned
   const hasClass = !!studentInfo.classId;
 
@@ -411,9 +373,6 @@ export const getStudentDashboard = handleDashboardError(async (req, res) => {
       },
     }) : Promise.resolve({ subjects: [] }),
   ]);
-  
-  console.log('[Student Dashboard] All data fetched from Promise.all.');
-
   // Calculate attendance percentage
   const totalAttendance = attendanceSummary.reduce(
     (sum, item) => sum + item._count.status,
@@ -439,22 +398,16 @@ export const getStudentDashboard = handleDashboardError(async (req, res) => {
     timetable: timetable || [], // Ensure it's always an array
     subjects: classInfo?.subjects || [],
   };
-
-  console.log(`[Student Dashboard] Sending response for studentId: ${studentId}`);
-
   res.json(responseData);
-});
+};
 
 // Get parent dashboard
-export const getParentDashboard = handleDashboardError(async (req, res) => {
+export const getParentDashboard = async (req, res) => {
   const parentId = req.user.parent?.id;
 
   if (!parentId) {
-    return res.status(403).json({ message: "Access denied. Parent profile not found." });
+    throw forbidden("Access denied. Parent profile not found.");
   }
-
-  console.log('Fetching parent dashboard for:', parentId);
-
   // First get children to use their IDs
   const children = await prisma.student.findMany({
     where: { parentId },
@@ -610,13 +563,11 @@ export const getParentDashboard = handleDashboardError(async (req, res) => {
     recentGrades: childrenGrades,
     upcomingExams,
   });
-});
+};
 
 // Main dashboard route
-export const getDashboard = handleDashboardError(async (req, res) => {
+export const getDashboard = async (req, res) => {
   const userRole = req.user.role;
-  console.log('Dashboard request for role:', userRole);
-
   switch (userRole) {
     case "ADMIN":
       return await getAdminDashboard(req, res);
@@ -629,4 +580,4 @@ export const getDashboard = handleDashboardError(async (req, res) => {
     default:
       return res.status(400).json({ message: "Invalid user role: " + userRole });
   }
-});
+};

@@ -1,322 +1,128 @@
-import { PrismaClient } from "@prisma/client";
+import prisma from '../lib/prisma.js';
+import { badRequest, conflict, forbidden, notFound } from '../lib/errors.js';
+import { assertCanManageClass, assertCanViewClass } from '../lib/access.js';
+import { DAYS } from '../validation/schemas.js';
 
-const prisma = new PrismaClient();
+const entryInclude = {
+  class: { select: { id: true, name: true, level: true } },
+  subject: { select: { id: true, name: true, code: true } },
+  teacher: { include: { user: { select: { fullName: true } } } },
+};
 
-// Get all timetable entries
+const dayOrder = (a, b) =>
+  DAYS.indexOf(a.day) - DAYS.indexOf(b.day) || a.startTime.localeCompare(b.startTime);
+
+// GET /api/timetable
 export const getTimetable = async (req, res) => {
-  try {
-    const { classId, teacherId, day } = req.query;
-    
-    const where = {};
-    if (classId) where.classId = classId;
-    if (teacherId) where.teacherId = teacherId;
-    if (day) where.day = day;
-
-    const timetable = await prisma.timetable.findMany({
-      where,
-      include: {
-        class: {
-          select: {
-            name: true,
-            level: true
-          }
-        },
-        subject: {
-          select: {
-            name: true,
-            code: true
-          }
-        },
-        teacher: {
-          include: {
-            user: {
-              select: {
-                fullName: true
-              }
-            }
-          }
-        }
-      },
-      orderBy: [
-        { day: 'asc' },
-        { startTime: 'asc' }
-      ]
-    });
-
-    res.json({ timetable });
-  } catch (error) {
-    console.error('Error fetching timetable:', error);
-    res.status(500).json({ message: 'Server error fetching timetable' });
-  }
+  const { classId, teacherId, day } = req.query;
+  const timetable = await prisma.timetable.findMany({
+    where: { ...(classId && { classId }), ...(teacherId && { teacherId }), ...(day && { day }) },
+    include: entryInclude,
+  });
+  res.json({ timetable: timetable.sort(dayOrder) });
 };
 
-// Get timetable by ID
+// GET /api/timetable/:id
 export const getTimetableById = async (req, res) => {
-  try {
-    const { id } = req.params;
+  const timetable = await prisma.timetable.findUnique({
+    where: { id: req.params.id },
+    include: entryInclude,
+  });
+  if (!timetable) throw notFound('Timetable entry not found');
+  res.json({ timetable });
+};
 
-    const timetable = await prisma.timetable.findUnique({
-      where: { id },
-      include: {
-        class: {
-          select: {
-            name: true,
-            level: true
-          }
-        },
-        subject: {
-          select: {
-            name: true,
-            code: true
-          }
-        },
-        teacher: {
-          include: {
-            user: {
-              select: {
-                fullName: true,
-                email: true
-              }
-            }
-          }
-        }
-      }
-    });
-
-    if (!timetable) {
-      return res.status(404).json({ message: 'Timetable entry not found' });
-    }
-
-    res.json({ timetable });
-  } catch (error) {
-    console.error('Error fetching timetable entry:', error);
-    res.status(500).json({ message: 'Server error fetching timetable entry' });
+/**
+ * Two slots overlap when existing.start < new.end AND existing.end > new.start.
+ * Checks both the class (can't have two lessons at once) and the teacher
+ * (can't teach two classes at once).
+ */
+const assertNoClash = async ({ id, classId, teacherId, day, startTime, endTime }) => {
+  const clash = await prisma.timetable.findFirst({
+    where: {
+      day,
+      ...(id && { NOT: { id } }),
+      OR: [{ classId }, { teacherId }],
+      startTime: { lt: endTime },
+      endTime: { gt: startTime },
+    },
+    include: { class: { select: { name: true } }, subject: { select: { name: true } } },
+  });
+  if (clash) {
+    const who = clash.classId === classId ? 'This class' : 'This teacher';
+    throw conflict(
+      `${who} already has ${clash.subject.name} (${clash.class.name}) from ${clash.startTime} to ${clash.endTime}.`
+    );
   }
 };
 
-// Create timetable entry
+const assertTeacherFor = (user, teacherId) => {
+  if (user.role === 'TEACHER' && teacherId !== user.teacher.id) {
+    throw forbidden('Teachers can only schedule their own lessons');
+  }
+};
+
+// POST /api/timetable (class teacher/admin)
 export const createTimetable = async (req, res) => {
-  try {
-    const { classId, subjectId, teacherId, day, startTime, endTime } = req.body;
+  const data = req.body;
+  await assertCanManageClass(req.user, data.classId);
+  assertTeacherFor(req.user, data.teacherId);
+  await assertNoClash(data);
 
-    if (!classId || !subjectId || !teacherId || !day || !startTime || !endTime) {
-      return res.status(400).json({ 
-        message: 'Class ID, Subject ID, Teacher ID, day, start time, and end time are required' 
-      });
-    }
-
-    // Check for conflicts
-    const conflict = await prisma.timetable.findFirst({
-      where: {
-        classId,
-        day,
-        OR: [
-          {
-            startTime: { lte: startTime },
-            endTime: { gt: startTime }
-          },
-          {
-            startTime: { lt: endTime },
-            endTime: { gte: endTime }
-          }
-        ]
-      }
-    });
-
-    if (conflict) {
-      return res.status(400).json({ 
-        message: 'Time slot conflict with existing timetable entry' 
-      });
-    }
-
-    const timetable = await prisma.timetable.create({
-      data: {
-        classId,
-        subjectId,
-        teacherId,
-        day,
-        startTime,
-        endTime
-      },
-      include: {
-        class: {
-          select: {
-            name: true
-          }
-        },
-        subject: {
-          select: {
-            name: true
-          }
-        },
-        teacher: {
-          include: {
-            user: {
-              select: {
-                fullName: true
-              }
-            }
-          }
-        }
-      }
-    });
-
-    res.status(201).json({
-      message: 'Timetable entry created successfully',
-      timetable
-    });
-  } catch (error) {
-    console.error('Error creating timetable entry:', error);
-    
-    if (error.code === 'P2003') {
-      return res.status(400).json({ message: 'Invalid class, subject, or teacher ID' });
-    }
-    
-    res.status(500).json({ message: 'Server error creating timetable entry' });
-  }
+  const timetable = await prisma.timetable.create({ data, include: entryInclude });
+  res.status(201).json({ message: 'Timetable entry created', timetable });
 };
 
-// Update timetable entry
+// PUT /api/timetable/:id (class teacher/admin)
 export const updateTimetable = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { classId, subjectId, teacherId, day, startTime, endTime } = req.body;
+  const existing = await prisma.timetable.findUnique({ where: { id: req.params.id } });
+  if (!existing) throw notFound('Timetable entry not found');
+  await assertCanManageClass(req.user, existing.classId);
 
-    const timetable = await prisma.timetable.update({
-      where: { id },
-      data: {
-        ...(classId && { classId }),
-        ...(subjectId && { subjectId }),
-        ...(teacherId && { teacherId }),
-        ...(day && { day }),
-        ...(startTime && { startTime }),
-        ...(endTime && { endTime })
-      },
-      include: {
-        class: {
-          select: {
-            name: true
-          }
-        },
-        subject: {
-          select: {
-            name: true
-          }
-        }
-      }
-    });
+  const merged = { ...existing, ...req.body };
+  if (req.body.classId) await assertCanManageClass(req.user, merged.classId);
+  assertTeacherFor(req.user, merged.teacherId);
+  if (merged.endTime <= merged.startTime) throw badRequest('End time must be after start time');
+  await assertNoClash(merged);
 
-    res.json({
-      message: 'Timetable entry updated successfully',
-      timetable
-    });
-  } catch (error) {
-    console.error('Error updating timetable entry:', error);
-    
-    if (error.code === 'P2025') {
-      return res.status(404).json({ message: 'Timetable entry not found' });
-    }
-    
-    res.status(500).json({ message: 'Server error updating timetable entry' });
-  }
+  const timetable = await prisma.timetable.update({
+    where: { id: existing.id },
+    data: req.body,
+    include: entryInclude,
+  });
+  res.json({ message: 'Timetable entry updated', timetable });
 };
 
-// Delete timetable entry
+// DELETE /api/timetable/:id (class teacher/admin)
 export const deleteTimetable = async (req, res) => {
-  try {
-    const { id } = req.params;
+  const existing = await prisma.timetable.findUnique({
+    where: { id: req.params.id },
+    select: { classId: true },
+  });
+  if (!existing) throw notFound('Timetable entry not found');
+  await assertCanManageClass(req.user, existing.classId);
 
-    await prisma.timetable.delete({
-      where: { id }
-    });
-
-    res.json({ message: 'Timetable entry deleted successfully' });
-  } catch (error) {
-    console.error('Error deleting timetable entry:', error);
-    
-    if (error.code === 'P2025') {
-      return res.status(404).json({ message: 'Timetable entry not found' });
-    }
-    
-    res.status(500).json({ message: 'Server error deleting timetable entry' });
-  }
+  await prisma.timetable.delete({ where: { id: req.params.id } });
+  res.json({ message: 'Timetable entry deleted' });
 };
 
-// Get class timetable
+// GET /api/timetable/class/:classId — grouped by day.
 export const getClassTimetable = async (req, res) => {
-  try {
-    const { classId } = req.params;
+  const { classId } = req.params;
+  await assertCanViewClass(req.user, classId);
 
-    const timetable = await prisma.timetable.findMany({
-      where: { classId },
-      include: {
-        subject: {
-          select: {
-            name: true,
-            code: true
-          }
-        },
-        teacher: {
-          include: {
-            user: {
-              select: {
-                fullName: true
-              }
-            }
-          }
-        }
-      },
-      orderBy: [
-        { day: 'asc' },
-        { startTime: 'asc' }
-      ]
-    });
+  const entries = await prisma.timetable.findMany({ where: { classId }, include: entryInclude });
+  const grouped = Object.fromEntries(DAYS.map((d) => [d, []]));
+  for (const e of entries.sort(dayOrder)) grouped[e.day]?.push(e);
 
-    // Group by day for easier frontend consumption
-    const groupedTimetable = {};
-    const days = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
-    
-    days.forEach(day => {
-      groupedTimetable[day] = timetable.filter(entry => entry.day === day);
-    });
-
-    res.json({ timetable: groupedTimetable });
-  } catch (error) {
-    console.error('Error fetching class timetable:', error);
-    res.status(500).json({ message: 'Server error fetching class timetable' });
-  }
+  res.json({ timetable: grouped });
 };
 
-// Get teacher timetable
+// GET /api/timetable/teacher/:teacherId (teacher self/admin)
 export const getTeacherTimetable = async (req, res) => {
-  try {
-    const { teacherId } = req.params;
+  const { teacherId } = req.params;
+  if (req.user.role === 'TEACHER' && req.user.teacher.id !== teacherId) throw forbidden();
 
-    const timetable = await prisma.timetable.findMany({
-      where: { teacherId },
-      include: {
-        class: {
-          select: {
-            name: true,
-            level: true
-          }
-        },
-        subject: {
-          select: {
-            name: true,
-            code: true
-          }
-        }
-      },
-      orderBy: [
-        { day: 'asc' },
-        { startTime: 'asc' }
-      ]
-    });
-
-    res.json({ timetable });
-  } catch (error) {
-    console.error('Error fetching teacher timetable:', error);
-    res.status(500).json({ message: 'Server error fetching teacher timetable' });
-  }
+  const timetable = await prisma.timetable.findMany({ where: { teacherId }, include: entryInclude });
+  res.json({ timetable: timetable.sort(dayOrder) });
 };

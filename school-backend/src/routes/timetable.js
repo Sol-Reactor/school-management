@@ -1,27 +1,31 @@
 import express from 'express';
 import {
-  getTimetable,
-  getTimetableById,
   createTimetable,
-  updateTimetable,
   deleteTimetable,
   getClassTimetable,
-  getTeacherTimetable
+  getTeacherTimetable,
+  getTimetable,
+  getTimetableById,
+  updateTimetable,
 } from '../controllers/timetableController.js';
+import { authenticate, requireTeacherOrAdmin } from '../middleware/auth.js';
+import { validate } from '../middleware/validate.js';
 import {
-  authenticate,
-  requireTeacherOrAdmin,
-  requireClassMembership
-} from '../middleware/auth.js';
+  createTimetableSchema,
+  listTimetableQuery,
+  updateTimetableSchema,
+} from '../validation/schemas.js';
 
 const router = express.Router();
 
-router.get('/', authenticate, getTimetable);
-router.get('/class/:classId', authenticate, requireClassMembership, getClassTimetable);
-router.get('/teacher/:teacherId', authenticate, requireTeacherOrAdmin, getTeacherTimetable);
-router.get('/:id', authenticate, getTimetableById);
-router.post('/', authenticate, requireTeacherOrAdmin, createTimetable);
-router.put('/:id', authenticate, requireTeacherOrAdmin, updateTimetable);
-router.delete('/:id', authenticate, requireTeacherOrAdmin, deleteTimetable);
+router.use(authenticate);
+
+router.get('/', validate({ query: listTimetableQuery }), getTimetable);
+router.get('/class/:classId', getClassTimetable);
+router.get('/teacher/:teacherId', requireTeacherOrAdmin, getTeacherTimetable);
+router.get('/:id', getTimetableById);
+router.post('/', requireTeacherOrAdmin, validate({ body: createTimetableSchema }), createTimetable);
+router.put('/:id', requireTeacherOrAdmin, validate({ body: updateTimetableSchema }), updateTimetable);
+router.delete('/:id', requireTeacherOrAdmin, deleteTimetable);
 
 export default router;

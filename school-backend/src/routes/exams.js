@@ -1,25 +1,25 @@
 import express from 'express';
 import {
-  getExams,
-  getExamById,
   createExam,
-  updateExam,
   deleteExam,
-  getClassExams
+  getClassExams,
+  getExamById,
+  getExams,
+  updateExam,
 } from '../controllers/examsController.js';
-import {
-  authenticate,
-  requireTeacherOrAdmin,
-  requireClassMembership
-} from '../middleware/auth.js';
+import { authenticate, requireTeacherOrAdmin } from '../middleware/auth.js';
+import { validate } from '../middleware/validate.js';
+import { createExamSchema, listExamsQuery, updateExamSchema } from '../validation/schemas.js';
 
 const router = express.Router();
 
-router.get('/', authenticate, getExams);
-router.get('/class/:classId', authenticate, requireClassMembership, getClassExams);
-router.get('/:id', authenticate, getExamById);
-router.post('/', authenticate, requireTeacherOrAdmin, createExam);
-router.put('/:id', authenticate, requireTeacherOrAdmin, updateExam);
-router.delete('/:id', authenticate, requireTeacherOrAdmin, deleteExam);
+router.use(authenticate);
+
+router.get('/', validate({ query: listExamsQuery }), getExams);
+router.get('/class/:classId', getClassExams);
+router.get('/:id', getExamById);
+router.post('/', requireTeacherOrAdmin, validate({ body: createExamSchema }), createExam);
+router.put('/:id', requireTeacherOrAdmin, validate({ body: updateExamSchema }), updateExam);
+router.delete('/:id', requireTeacherOrAdmin, deleteExam);
 
 export default router;

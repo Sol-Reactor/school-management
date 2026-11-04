@@ -1,12 +1,23 @@
 import express from 'express';
-import { getUsers, getUserById, updateUser, deleteUser } from '../controllers/usersController.js';
+import {
+  createUser,
+  deleteUser,
+  getUserById,
+  getUsers,
+  updateUser,
+} from '../controllers/usersController.js';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
+import { validate } from '../middleware/validate.js';
+import { createUserSchema, listUsersQuery, updateUserSchema } from '../validation/schemas.js';
 
 const router = express.Router();
 
-router.get('/', authenticate, requireAdmin, getUsers);
-router.get('/:id', authenticate, requireAdmin, getUserById);
-router.put('/:id', authenticate, requireAdmin, updateUser);
-router.delete('/:id', authenticate, requireAdmin, deleteUser);
+router.use(authenticate, requireAdmin);
+
+router.get('/', validate({ query: listUsersQuery }), getUsers);
+router.post('/', validate({ body: createUserSchema }), createUser);
+router.get('/:id', getUserById);
+router.put('/:id', validate({ body: updateUserSchema }), updateUser);
+router.delete('/:id', deleteUser);
 
 export default router;
