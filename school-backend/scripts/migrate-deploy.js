@@ -45,3 +45,11 @@ if (toBaseline.length) {
   for (const name of toBaseline) prisma(['migrate', 'resolve', '--applied', name]);
 }
 prisma(['migrate', 'deploy']);
+
+// SEED_DEMO=true refreshes the demo school on start (demo data only, idempotent).
+// Useful on hosts without a shell; remove the variable afterwards to keep cold starts fast.
+if (process.env.SEED_DEMO === 'true') {
+  console.log('[migrate] SEED_DEMO=true: refreshing the demo school');
+  const seed = spawnSync('node', ['prisma/seed.js'], { stdio: 'inherit' });
+  if (seed.status !== 0) console.error('[migrate] Demo seed failed; starting the server anyway.');
+}

@@ -44,8 +44,12 @@ Environment variables:
 
 ### Demo data
 
-The one-click demo needs the demo school. After the first successful deploy, seed it once
-from your machine (it only creates or replaces `@demo.haya.app` data and is safe to re-run):
+The one-click demo needs the demo school. The seed only creates or replaces
+`@demo.haya.app` data and is safe to re-run. Either:
+
+- set `SEED_DEMO=true` in Render's environment (it seeds on the next start), then remove
+  it once the logs show `Done:`, or
+- run it from your machine:
 
 ```bash
 cd school-backend
